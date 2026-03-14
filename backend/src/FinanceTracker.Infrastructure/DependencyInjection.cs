@@ -1,0 +1,42 @@
+using FinanceTracker.Application.Accounts.Interfaces;
+using FinanceTracker.Application.Auth.Interfaces;
+using FinanceTracker.Application.Budgets.Interfaces;
+using FinanceTracker.Application.Categories.Interfaces;
+using FinanceTracker.Application.Dashboard.Interfaces;
+using FinanceTracker.Application.Reports.Interfaces;
+using FinanceTracker.Application.Transactions.Interfaces;
+using FinanceTracker.Infrastructure.Auth;
+using FinanceTracker.Infrastructure.Financial;
+using FinanceTracker.Infrastructure.Persistence;
+using FinanceTracker.Infrastructure.Reporting;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace FinanceTracker.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Database connection string is not configured.");
+
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseNpgsql(connectionString));
+
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ITokenGenerator, TokenGenerator>();
+        services.AddScoped<IPasswordHasher<Domain.Entities.User>, PasswordHasher<Domain.Entities.User>>();
+        services.AddScoped<ICategorySeeder, CategorySeeder>();
+        services.AddScoped<IAccountService, AccountService>();
+        services.AddScoped<ICategoryService, CategoryService>();
+        services.AddScoped<ITransactionService, TransactionService>();
+        services.AddScoped<IBudgetService, BudgetService>();
+        services.AddScoped<IReportService, ReportService>();
+        services.AddScoped<IDashboardService, DashboardService>();
+
+        return services;
+    }
+}

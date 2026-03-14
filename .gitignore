@@ -1,0 +1,13 @@
+.dotnet/
+.nuget/
+frontend/node_modules/
+frontend/dist/
+backend/src/**/bin/
+backend/src/**/obj/
+backend/build.log
+backend/api-build.log
+*.user
+*.suo
+.env
+.env.*
+!.env.example
