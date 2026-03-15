@@ -1,6 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/providers/AuthProvider";
-
 const navigationItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/transactions", label: "Transactions" },
@@ -11,16 +10,14 @@ const navigationItems = [
   { to: "/recurring", label: "Recurring" },
   { to: "/settings", label: "Settings" },
 ];
-
 export function AppShell() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-
+  const initials = [user?.firstName?.charAt(0) ?? "", user?.lastName?.charAt(0) ?? ""].join("").toUpperCase();
   async function handleLogout() {
     await logout();
     navigate("/login", { replace: true });
   }
-
   return (
     <div className="shell-layout">
       <aside className="sidebar">
@@ -35,9 +32,10 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar-spacer" />
+        <button type="button" className="ghost-button" onClick={handleLogout}>Logout</button>
         <div className="sidebar-footnote">Accounts, transactions, budgets, dashboard insights, and core reporting are now active.</div>
       </aside>
-
       <div className="shell-main">
         <header className="topbar">
           <div>
@@ -45,11 +43,9 @@ export function AppShell() {
             <h1 className="topbar-title">Welcome, {user?.firstName}</h1>
           </div>
           <div className="topbar-actions">
-            <div className="user-badge">
-              <span>{user?.firstName} {user?.lastName}</span>
-              <small>{user?.email}</small>
+            <div className="user-badge user-badge--avatar-only" aria-label="Signed-in user initials">
+              <span className="user-badge__avatar" aria-hidden="true">{initials}</span>
             </div>
-            <button type="button" className="ghost-button" onClick={handleLogout}>Logout</button>
           </div>
         </header>
         <main className="content-panel"><Outlet /></main>
