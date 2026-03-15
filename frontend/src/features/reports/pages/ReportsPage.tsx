@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -36,6 +36,8 @@ export function ReportsPage() {
   const [overview, setOverview] = useState<ReportsOverviewDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
@@ -59,22 +61,40 @@ export function ReportsPage() {
     }
   }
 
+  function buildQuery(values?: ReportFormValues) {
+    const activeValues = values ?? watch();
+    return {
+      startDateUtc: new Date(activeValues.startDateUtc).toISOString(),
+      endDateUtc: new Date(activeValues.endDateUtc).toISOString(),
+      ...(activeValues.accountId ? { accountId: activeValues.accountId } : {}),
+    };
+  }
+
   async function loadReports(values?: ReportFormValues) {
     if (!accessToken) return;
-    const activeValues = values ?? watch();
     setLoading(true);
     try {
-      const response = await reportsApi.overview(accessToken, {
-        startDateUtc: new Date(activeValues.startDateUtc).toISOString(),
-        endDateUtc: new Date(activeValues.endDateUtc).toISOString(),
-        ...(activeValues.accountId ? { accountId: activeValues.accountId } : {}),
-      });
+      const response = await reportsApi.overview(accessToken, buildQuery(values));
       setOverview(response);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof ApiError ? error.message : "Unable to load reports.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function exportOverview() {
+    if (!accessToken) return;
+    setIsExporting(true);
+    setExportMessage(null);
+    try {
+      const fileName = await reportsApi.exportOverviewCsv(accessToken, buildQuery());
+      setExportMessage(`Exported ${fileName}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : "Unable to export report data.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -89,8 +109,9 @@ export function ReportsPage() {
     <div className="page-stack">
       <SectionHeader title="Reports" description="Server-aggregated summaries with compact weekly or monthly trend buckets." />
       {errorMessage ? <Alert message={errorMessage} /> : null}
+      {exportMessage ? <p className="form-status" role="status" aria-live="polite">{exportMessage}</p> : null}
       <form onSubmit={handleSubmit(loadReports)} noValidate>
-        <FilterRow action={<button type="submit" className="primary-button" disabled={isSubmitting}>{isSubmitting ? "Loading..." : "Apply filters"}</button>}>
+        <FilterRow action={<div className="button-row"><button type="button" className="ghost-button" onClick={exportOverview} disabled={isExporting} aria-label="Export current report overview to CSV">{isExporting ? "Exporting..." : "Export CSV"}</button><button type="submit" className="primary-button" disabled={isSubmitting}>{isSubmitting ? "Loading..." : "Apply filters"}</button></div>}>
           <Field label="Start date" error={errors.startDateUtc?.message}><input type="date" {...register("startDateUtc")} /></Field>
           <Field label="End date" error={errors.endDateUtc?.message}><input type="date" {...register("endDateUtc")} /></Field>
           <Field label="Account" error={errors.accountId?.message}>

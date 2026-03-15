@@ -16,4 +16,7 @@ public sealed class User : AuditableEntity
     public ICollection<Category> Categories { get; set; } = new List<Category>();
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<Budget> Budgets { get; set; } = new List<Budget>();
+    public ICollection<Goal> Goals { get; set; } = new List<Goal>();
+    public ICollection<GoalEntry> GoalEntries { get; set; } = new List<GoalEntry>();
+    public ICollection<RecurringTransactionRule> RecurringTransactionRules { get; set; } = new List<RecurringTransactionRule>();
 }

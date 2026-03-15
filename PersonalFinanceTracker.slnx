@@ -1,9 +1,12 @@
-<Solution>
+﻿<Solution>
   <Folder Name="/backend/" />
   <Folder Name="/backend/src/">
     <Project Path="backend/src/FinanceTracker.Api/FinanceTracker.Api.csproj" />
     <Project Path="backend/src/FinanceTracker.Application/FinanceTracker.Application.csproj" />
     <Project Path="backend/src/FinanceTracker.Domain/FinanceTracker.Domain.csproj" />
     <Project Path="backend/src/FinanceTracker.Infrastructure/FinanceTracker.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/backend/tests/">
+    <Project Path="backend/tests/FinanceTracker.Backend.Tests/FinanceTracker.Backend.Tests.csproj" />
   </Folder>
 </Solution>

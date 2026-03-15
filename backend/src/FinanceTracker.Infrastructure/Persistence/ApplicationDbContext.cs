@@ -12,6 +12,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<TransactionTag> TransactionTags => Set<TransactionTag>();
     public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<Goal> Goals => Set<Goal>();
+    public DbSet<GoalEntry> GoalEntries => Set<GoalEntry>();
+    public DbSet<RecurringTransactionRule> RecurringTransactionRules => Set<RecurringTransactionRule>();
+    public DbSet<RecurringTransactionExecution> RecurringTransactionExecutions => Set<RecurringTransactionExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

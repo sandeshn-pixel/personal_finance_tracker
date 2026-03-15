@@ -160,6 +160,226 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.ToTable("categories", (string)null);
                 });
 
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.Goal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("CurrentAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("LinkedAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("TargetAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("TargetDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LinkedAccountId");
+
+                    b.HasIndex("UserId", "LinkedAccountId");
+
+                    b.HasIndex("UserId", "Status", "TargetDateUtc");
+
+                    b.ToTable("goals", (string)null);
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.GoalEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("GoalAmountAfterEntry")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("GoalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("GoalId", "OccurredAtUtc");
+
+                    b.HasIndex("UserId", "OccurredAtUtc");
+
+                    b.ToTable("goal_entries", (string)null);
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.RecurringTransactionExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(280)
+                        .HasColumnType("character varying(280)");
+
+                    b.Property<DateTime?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RecurringTransactionRuleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ScheduledForDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("TransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransactionId");
+
+                    b.HasIndex("RecurringTransactionRuleId", "ScheduledForDateUtc")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "ProcessedAtUtc");
+
+                    b.ToTable("recurring_transaction_executions", (string)null);
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.RecurringTransactionRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("AutoCreateTransaction")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EndDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Frequency")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("NextRunDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("StartDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid?>("TransferAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("TransferAccountId");
+
+                    b.HasIndex("UserId", "AccountId");
+
+                    b.HasIndex("UserId", "CategoryId");
+
+                    b.HasIndex("UserId", "Status", "NextRunDateUtc");
+
+                    b.ToTable("recurring_transaction_rules", (string)null);
+                });
+
             modelBuilder.Entity("FinanceTracker.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -398,6 +618,101 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.Goal", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "LinkedAccount")
+                        .WithMany("Goals")
+                        .HasForeignKey("LinkedAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "User")
+                        .WithMany("Goals")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LinkedAccount");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.GoalEntry", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "Account")
+                        .WithMany("GoalEntries")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.Goal", "Goal")
+                        .WithMany("Entries")
+                        .HasForeignKey("GoalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "User")
+                        .WithMany("GoalEntries")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Goal");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.RecurringTransactionExecution", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.RecurringTransactionRule", "RecurringTransactionRule")
+                        .WithMany("Executions")
+                        .HasForeignKey("RecurringTransactionRuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.Transaction", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("RecurringTransactionRule");
+
+                    b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.RecurringTransactionRule", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "Account")
+                        .WithMany("RecurringTransactionRules")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.Category", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "TransferAccount")
+                        .WithMany("RecurringTransferTransactionRules")
+                        .HasForeignKey("TransferAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "User")
+                        .WithMany("RecurringTransactionRules")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Category");
+
+                    b.Navigation("TransferAccount");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("FinanceTracker.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("FinanceTracker.Domain.Entities.User", "User")
@@ -455,6 +770,14 @@ namespace FinanceTracker.Infrastructure.Migrations
 
             modelBuilder.Entity("FinanceTracker.Domain.Entities.Account", b =>
                 {
+                    b.Navigation("GoalEntries");
+
+                    b.Navigation("Goals");
+
+                    b.Navigation("RecurringTransactionRules");
+
+                    b.Navigation("RecurringTransferTransactionRules");
+
                     b.Navigation("Transactions");
 
                     b.Navigation("TransferTransactions");
@@ -465,6 +788,16 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Navigation("Budgets");
 
                     b.Navigation("Transactions");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.Goal", b =>
+                {
+                    b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.RecurringTransactionRule", b =>
+                {
+                    b.Navigation("Executions");
                 });
 
             modelBuilder.Entity("FinanceTracker.Domain.Entities.Transaction", b =>
@@ -479,6 +812,12 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Navigation("Budgets");
 
                     b.Navigation("Categories");
+
+                    b.Navigation("GoalEntries");
+
+                    b.Navigation("Goals");
+
+                    b.Navigation("RecurringTransactionRules");
 
                     b.Navigation("RefreshTokens");
 

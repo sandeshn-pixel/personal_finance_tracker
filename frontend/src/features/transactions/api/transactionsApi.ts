@@ -1,4 +1,4 @@
-import { apiClient } from "../../../shared/lib/api/client";
+﻿import { apiClient, downloadFile } from "../../../shared/lib/api/client";
 
 export type TransactionDto = {
   id: string;
@@ -42,8 +42,8 @@ export type TransactionPayload = {
 };
 
 export type TransactionQuery = {
-  page: number;
-  pageSize: number;
+  page?: number;
+  pageSize?: number;
   startDateUtc?: string;
   endDateUtc?: string;
   categoryId?: string;
@@ -54,7 +54,7 @@ export type TransactionQuery = {
   search?: string;
 };
 
-function toSearchParams(query: TransactionQuery) {
+export function toSearchParams(query: TransactionQuery) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(query)) {
@@ -73,4 +73,5 @@ export const transactionsApi = {
   create: (accessToken: string, payload: TransactionPayload) => apiClient<TransactionDto>("/transactions", { method: "POST", body: JSON.stringify(payload), accessToken }),
   update: (accessToken: string, id: string, payload: TransactionPayload) => apiClient<TransactionDto>(`/transactions/${id}`, { method: "PUT", body: JSON.stringify(payload), accessToken }),
   remove: (accessToken: string, id: string) => apiClient<void>(`/transactions/${id}`, { method: "DELETE", accessToken }),
+  exportCsv: (accessToken: string, query: TransactionQuery) => downloadFile(`/exports/transactions.csv?${toSearchParams(query)}`, "transactions.csv", { accessToken }),
 };

@@ -1,4 +1,4 @@
-using FinanceTracker.Application.Budgets.DTOs;
+﻿using FinanceTracker.Application.Budgets.DTOs;
 using FinanceTracker.Application.Budgets.Interfaces;
 using FinanceTracker.Application.Common;
 using FinanceTracker.Domain.Entities;
@@ -159,10 +159,21 @@ public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetServi
 
     private async Task<Dictionary<Guid, decimal>> LoadActualsAsync(Guid userId, int year, int month, CancellationToken cancellationToken)
     {
-        return await dbContext.Transactions
+        var baseQuery = dbContext.Transactions
             .AsNoTracking()
             .Where(x => x.UserId == userId && !x.IsDeleted && x.Type == TransactionType.Expense && x.CategoryId != null && x.DateUtc.Year == year && x.DateUtc.Month == month)
-            .GroupBy(x => x.CategoryId!.Value)
+            .Select(x => new { CategoryId = x.CategoryId!.Value, x.Amount });
+
+        if (string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.Ordinal))
+        {
+            var rows = await baseQuery.ToListAsync(cancellationToken);
+            return rows
+                .GroupBy(x => x.CategoryId)
+                .ToDictionary(x => x.Key, x => x.Sum(item => item.Amount));
+        }
+
+        return await baseQuery
+            .GroupBy(x => x.CategoryId)
             .Select(g => new { CategoryId = g.Key, Amount = g.Sum(x => x.Amount) })
             .ToDictionaryAsync(x => x.CategoryId, x => x.Amount, cancellationToken);
     }

@@ -1,0 +1,47 @@
+﻿version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: finance_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=finance_tracker;Username=postgres;Password=postgres
+      Jwt__Issuer: finance-tracker
+      Jwt__Audience: finance-tracker-web
+      Jwt__SigningKey: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      Jwt__AccessTokenLifetimeMinutes: 15
+      Jwt__RefreshTokenLifetimeDays: 14
+      Jwt__RefreshCookieName: ft_refresh
+      Jwt__RequireHttpsMetadata: false
+      Frontend__AllowedOrigins__0: http://localhost:8080
+    depends_on:
+      - postgres
+    ports:
+      - "8081:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres-data:

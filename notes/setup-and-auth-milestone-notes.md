@@ -693,3 +693,333 @@ After this phase, the next strong milestone would be:
 - goals
 - richer reports and export capabilities
 - notification or budget alert workflows
+
+## Phase 4: Goals and Recurring Transactions
+
+This phase added audited savings-goal tracking and recurring transaction scheduling on top of the existing accounts, budgets, and reporting foundation.
+
+### Scope Completed
+
+Implemented:
+
+- savings goal creation and editing
+- goal contribution and withdrawal flows
+- optional linked-account support for goals
+- goal completion and archive flows
+- dedicated goal audit trail entries
+- recurring transaction rule creation and editing
+- pause, resume, and safe delete behavior for recurring rules
+- due-occurrence processing endpoint for local execution
+- duplicate-prevention execution tracking
+- frontend goals page
+- frontend recurring transactions page
+
+### Backend Additions
+
+New domain models added:
+
+- `Goal`
+- `GoalEntry`
+- `RecurringTransactionRule`
+- `RecurringTransactionExecution`
+
+New enums added:
+
+- `GoalStatus`
+- `GoalEntryType`
+- `RecurringFrequency`
+- `RecurringRuleStatus`
+- `RecurringExecutionStatus`
+
+New backend services and controllers:
+
+- `GoalService`
+- `RecurringTransactionService`
+- `GoalsController`
+- `RecurringTransactionsController`
+
+New EF configurations:
+
+- `GoalConfiguration`
+- `GoalEntryConfiguration`
+- `RecurringTransactionRuleConfiguration`
+- `RecurringTransactionExecutionConfiguration`
+
+Migration added and applied:
+
+- `20260315060307_AddGoalsAndRecurringTransactions`
+
+### Goal Modeling Decisions
+
+Goals use a dedicated audited ledger instead of normal transactions.
+
+Reasoning:
+
+- goal contributions and withdrawals must be traceable
+- goal movements should not distort income, expense, budget, or report calculations
+- linked-account balance changes still need to happen safely when a goal is connected to an account
+
+Implemented behavior:
+
+- each contribution or withdrawal creates a `goal_entries` record
+- each entry stores amount, type, occurred date, optional note, linked account reference, and resulting goal balance
+- if the goal is linked to an account, the linked account balance is adjusted in the same database transaction
+- goal current amount can never go negative
+- completed goals automatically return to active if a later withdrawal drops them below target
+- archived goals block new contributions and withdrawals
+- manual completion requires the target amount to be reached first
+
+### Recurring Scheduling Decisions
+
+Recurring rules generate real transactions, but scheduling is separated from the rule definition.
+
+Idempotency strategy:
+
+- each scheduled occurrence is tracked in `recurring_transaction_executions`
+- there is a unique constraint on `rule + scheduled date`
+- this prevents duplicate generation of the same occurrence
+- recovery logic checks for a previously generated matching transaction before retrying an occurrence
+
+Local execution strategy:
+
+- a safe authenticated endpoint processes due recurring rules on demand
+- this gives a production-sensible abstraction now without pretending a background scheduler already exists
+- the same design can later be driven by Hangfire, Quartz, or another job host
+
+Generation behavior:
+
+- generated transactions use the same transaction service and therefore the same balance rules as manual transactions
+- generated transactions are tagged with `RecurringTransactionId`
+- paused rules do not generate
+- completed or deleted rules do not generate
+- transfer rules still obey source/destination account validation
+- category validation still applies for recurring income and expense rules
+
+### Frontend Additions
+
+Added real pages for:
+
+- `/goals`
+- `/recurring`
+
+Goals UI includes:
+
+- goal list with active and completed sections
+- create/edit goal form
+- contribution flow
+- withdrawal flow
+- progress display
+- recent goal entry history
+
+Recurring UI includes:
+
+- recurring rule list
+- create/edit rule form
+- pause/resume actions
+- delete flow
+- next due date display
+- process-due-now action for local execution
+
+### Security and Financial Integrity
+
+Rules enforced in this phase:
+
+- all goal and recurring endpoints are authenticated
+- all records are scoped by authenticated `userId`
+- linked accounts must belong to the authenticated user and be active
+- recurring rule references are validated against user-owned accounts and categories
+- generated recurring transactions obey the same source/destination/category invariants as manual transactions
+- money remains `decimal` / `numeric(18,2)`
+- UTC timestamps are used consistently
+- duplicate occurrence generation is guarded by both persisted execution records and recovery checks
+
+### Current Expected Tables After Phase 4
+
+The `public` schema should now include at least:
+
+- `goals`
+- `goal_entries`
+- `recurring_transaction_rules`
+- `recurring_transaction_executions`
+
+### Validation Status
+
+Verified for this phase:
+
+- `dotnet build src/FinanceTracker.Application/FinanceTracker.Application.csproj`
+- `dotnet build src/FinanceTracker.Infrastructure/FinanceTracker.Infrastructure.csproj`
+- `dotnet build src/FinanceTracker.Api/FinanceTracker.Api.csproj -c Release`
+- `npm run build`
+- `dotnet ef database update --project src/FinanceTracker.Infrastructure --startup-project src/FinanceTracker.Api`
+
+### Known Limitations In Phase 4
+
+- recurring execution is currently manual/on-demand rather than driven by a background worker
+- recurring-generated transactions currently use the rule title as the transaction note
+- goals use an internal audited ledger rather than separate transfer transactions, by design
+
+### Recommended Next Step
+
+After this phase, the next strong milestone would be:
+
+- notifications and reminder workflows
+- export capabilities
+- richer analytics and forecasting
+- scheduler infrastructure hardening for unattended recurring execution
+## Phase 5 - Export, Responsive Polish, Testing, and Deployment Hardening
+
+### Scope Delivered
+
+This phase focused on release readiness rather than adding another financial module. The work covered:
+
+- CSV exports for transactions, reports overview, and monthly budget summaries
+- responsive and accessibility polish on the frontend shell and filter/export flows
+- backend and frontend test coverage for critical business behavior
+- health checks, startup configuration validation, safer request/error handling, and deployment artifacts
+
+### Export Design
+
+Implemented backend export endpoints:
+
+- `GET /api/exports/transactions.csv`
+- `GET /api/exports/reports/overview.csv`
+- `GET /api/exports/budgets/month.csv`
+
+Export rules:
+
+- all export endpoints require authentication
+- all export data is scoped by authenticated `userId`
+- transaction export reuses the same server-side transaction filters used by the transactions page
+- report export reuses the same server-side report aggregation used by the reports page
+- budget export uses trusted monthly budget summary/detail calculations already in the backend
+- CSV is the only export format added in this phase; PDF was intentionally skipped to avoid a low-value rendering dependency and keep the phase production-sensible
+
+File generation decisions:
+
+- responses use `text/csv; charset=utf-8`
+- filenames are deterministic and time-stamped where appropriate
+- transfer handling remains consistent with the existing reporting rules, so exports do not distort income/expense reporting
+
+### Backend Hardening
+
+Operational changes added:
+
+- request logging middleware for method/path/status/duration logging
+- health endpoints:
+  - `/health/live`
+  - `/health/ready`
+- startup validation for JWT configuration
+- startup validation that frontend allowed origins exist outside development
+- CORS fallback only for local development origins when explicit origins are not configured
+- global exception middleware now returns cleaner problem titles for known application errors
+
+Production-safety decisions:
+
+- migrations are still explicit/manual rather than auto-applied on startup
+- category seeding remains user-triggered through auth/category flows and is not run globally at app startup
+- no production data seeding was added automatically
+
+### Frontend Additions
+
+Transactions page:
+
+- added `Export CSV` action
+- export uses the active transaction filters
+- export button is disabled while running
+- success feedback is shown after export completes
+
+Reports page:
+
+- added `Export CSV` action
+- export uses the current date/account report filters
+- success feedback is shown after export completes
+
+Responsive polish:
+
+- mobile/tablet shell now uses a drawer-style sidebar toggle instead of always-expanded navigation
+- drawer closes on route change and backdrop click
+- filter/action layouts are more resilient on narrower screens
+- topbar and shell spacing were tightened for smaller screens
+
+Accessibility cleanup:
+
+- stronger focus-visible behavior for interactive elements
+- explicit aria labels on export, logout, and nav toggle controls
+- status feedback uses `aria-live`
+
+### Testing Added
+
+#### Backend tests
+
+Created `backend/tests/FinanceTracker.Backend.Tests` with focused service-level coverage for:
+
+- auth register/login/refresh flow
+- transaction balance reversal correctness
+- transfer balance safety
+- budget calculation correctness
+- report aggregation correctness
+- goal contribution/withdrawal correctness
+- recurring idempotent due processing
+- transaction export filter correctness
+
+Important note:
+
+- backend tests use SQLite in-memory for fast correctness coverage
+- one provider-compatibility improvement was made for testability and portability:
+  - transaction text search was made provider-safe
+  - budget actual aggregation now has a SQLite-safe path while keeping PostgreSQL server aggregation in production
+
+#### Frontend tests
+
+Added Vitest + Testing Library coverage for:
+
+- route protection (`AuthGuard`)
+- auth persistence/logout (`AuthProvider`)
+- login validation
+- transactions filtering/export trigger
+- reports export trigger and smoke render
+- dashboard smoke render
+
+### Deployment Artifacts
+
+Added:
+
+- `backend/Dockerfile`
+- `backend/.dockerignore`
+- `frontend/Dockerfile`
+- `frontend/.dockerignore`
+- `frontend/nginx.conf`
+- root `docker-compose.yml`
+
+Docker decisions:
+
+- backend runs on ASP.NET Core runtime image
+- frontend builds with Node and serves static assets through Nginx
+- Nginx proxies `/api` and `/health` to the backend container
+- docker-compose includes PostgreSQL, backend, and frontend for local full-stack execution
+- compose uses explicit environment variables and keeps migration execution separate/documented
+
+### Validation Status
+
+Verified for this phase:
+
+- `dotnet build src/FinanceTracker.Api/FinanceTracker.Api.csproj -c Release`
+- `dotnet test backend/tests/FinanceTracker.Backend.Tests/FinanceTracker.Backend.Tests.csproj --no-restore`
+- `npm test`
+- `npm run build`
+
+### Known Limitations In Phase 5
+
+- exports are CSV-only in this phase; PDF is intentionally deferred
+- transaction export currently uses the existing transaction filters, which do not yet expose every possible report-style aggregation filter in the UI
+- request logging is structured and useful, but not yet integrated with an external log sink or correlation system
+- docker-compose does not auto-run database migrations; migration execution remains an explicit operational step
+
+### Recommended Next Step
+
+The strongest next cleanup or phase after this would be one of:
+
+- notification and reminder infrastructure for budgets/goals/recurring rules
+- scheduler hosting for unattended recurring execution
+- richer report/export formats and analytics
+- CI pipeline wiring for automated build/test/migration checks

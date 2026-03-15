@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using FinanceTracker.Api.Configuration;
+using FinanceTracker.Api.HealthChecks;
 using FinanceTracker.Api.Middleware;
 using FinanceTracker.Api.Options;
 using FinanceTracker.Api.Services;
@@ -9,7 +10,7 @@ using FinanceTracker.Application.Auth.Interfaces;
 using FinanceTracker.Infrastructure;
 using FinanceTracker.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.OpenApi;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,16 +22,33 @@ if (builder.Environment.IsDevelopment())
 
 builder.Configuration.AddEnvironmentVariables();
 
-builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
-builder.Services.Configure<FrontendOptions>(builder.Configuration.GetSection(FrontendOptions.SectionName));
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Database connection string is not configured.");
+
+builder.Services
+    .AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.Issuer), "JWT issuer is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.Audience), "JWT audience is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.SigningKey) && options.SigningKey.Length >= 32, "JWT signing key must be at least 32 characters.")
+    .Validate(options => options.AccessTokenLifetimeMinutes > 0, "JWT access token lifetime must be greater than zero.")
+    .Validate(options => options.RefreshTokenLifetimeDays > 0, "JWT refresh token lifetime must be greater than zero.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<FrontendOptions>()
+    .Bind(builder.Configuration.GetSection(FrontendOptions.SectionName))
+    .Validate(options => builder.Environment.IsDevelopment() || options.AllowedOrigins.Length > 0, "Frontend allowed origins must be configured outside development.")
+    .ValidateOnStart();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("JWT configuration is missing.");
-
-if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || jwtOptions.SigningKey.Length < 32)
-{
-    throw new InvalidOperationException("JWT signing key must be at least 32 characters.");
-}
+var frontendOptions = builder.Configuration.GetSection(FrontendOptions.SectionName).Get<FrontendOptions>() ?? new FrontendOptions();
+var allowedOrigins = frontendOptions.AllowedOrigins.Length > 0
+    ? frontendOptions.AllowedOrigins
+    : builder.Environment.IsDevelopment()
+        ? ["http://localhost:5173", "https://localhost:5173"]
+        : [];
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -42,20 +60,23 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", failureStatus: HealthStatus.Unhealthy, tags: ["ready"])
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        var frontendOptions = builder.Configuration.GetSection(FrontendOptions.SectionName).Get<FrontendOptions>() ?? new FrontendOptions();
-
-        if (frontendOptions.AllowedOrigins.Length > 0)
+        if (allowedOrigins.Length == 0)
         {
-            policy.WithOrigins(frontendOptions.AllowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials();
+            return;
         }
+
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -82,12 +103,21 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live")
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
 app.MapControllers();
 
 app.Run();

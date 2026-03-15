@@ -15,6 +15,28 @@ export type BudgetHealthDto = {
   thresholdReachedCount: number;
 };
 
+export type SavingsAutomationSummaryDto = {
+  totalContributedToGoals: number;
+  totalWithdrawnFromGoals: number;
+  netGoalSavings: number;
+  activeGoalsCount: number;
+  completedGoalsCount: number;
+  activeRecurringRulesCount: number;
+  pausedRecurringRulesCount: number;
+  dueRecurringRulesCount: number;
+};
+
+export type RecentGoalActivityDto = {
+  id: string;
+  goalId: string;
+  goalName: string;
+  type: "Contribution" | "Withdrawal";
+  amount: number;
+  occurredAtUtc: string;
+  note?: string | null;
+  accountName?: string | null;
+};
+
 export type DashboardSummaryDto = {
   currentMonthIncome: number;
   currentMonthExpense: number;
@@ -22,6 +44,8 @@ export type DashboardSummaryDto = {
   recentTransactions: TransactionDto[];
   spendingByCategory: CategorySpendDto[];
   budgetHealth: BudgetHealthDto;
+  savingsAutomation: SavingsAutomationSummaryDto;
+  recentGoalActivities: RecentGoalActivityDto[];
 };
 
 export const dashboardApi = {

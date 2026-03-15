@@ -49,9 +49,27 @@ export function DashboardPage() {
       {errorMessage ? <Alert message={errorMessage} /> : null}
       <div className="stats-grid stats-grid--four">
         <StatCard label="Current month income" value={formatCurrency(summary.currentMonthIncome)} hint="Income transactions in the current month." tone="positive" />
-        <StatCard label="Current month expense" value={formatCurrency(summary.currentMonthExpense)} hint="Expense transactions in the current month." tone="negative" />
+        <StatCard label="Current month expense" value={formatCurrency(summary.currentMonthExpense)} hint="Expense transactions only. Goal movements are tracked separately." tone="negative" />
         <StatCard label="Net balance" value={formatCurrency(summary.netBalance)} hint={`${accountCount} active accounts included.`} />
         <StatCard label="Budget remaining" value={formatCurrency(summary.budgetHealth.totalRemaining)} hint={`${summary.budgetHealth.overBudgetCount} over budget, ${summary.budgetHealth.thresholdReachedCount} warnings.`} tone={summary.budgetHealth.totalRemaining < 0 ? "negative" : "positive"} />
+      </div>
+      <div className="stats-grid">
+        <StatCard
+          label="Saved to goals"
+          value={formatCurrency(summary.savingsAutomation.totalContributedToGoals)}
+          hint={`${summary.savingsAutomation.activeGoalsCount} active goals.`}
+          tone="positive"
+        />
+        <StatCard
+          label="Withdrawn from goals"
+          value={formatCurrency(summary.savingsAutomation.totalWithdrawnFromGoals)}
+          hint={`${summary.savingsAutomation.completedGoalsCount} completed goals.`}
+        />
+        <StatCard
+          label="Recurring rules"
+          value={String(summary.savingsAutomation.activeRecurringRulesCount)}
+          hint={`${summary.savingsAutomation.dueRecurringRulesCount} due, ${summary.savingsAutomation.pausedRecurringRulesCount} paused.`}
+        />
       </div>
       <div className="dashboard-grid">
         <section className="panel-card">
@@ -98,29 +116,53 @@ export function DashboardPage() {
           )}
         </section>
       </div>
-      <section className="panel-card">
-        <div className="panel-card__header">
-          <h3>Spending by category</h3>
-          <p>Current month expense distribution.</p>
-        </div>
-        {summary.spendingByCategory.length === 0 ? (
-          <EmptyState title="No expense activity" description="The chart appears once expense transactions are recorded." />
-        ) : (
-          <div className="chart-list">
-            {summary.spendingByCategory.map((item) => (
-              <div key={item.categoryId} className="chart-row">
-                <div className="chart-row__label">
-                  <span>{item.categoryName}</span>
+      <div className="dashboard-grid">
+        <section className="panel-card">
+          <div className="panel-card__header">
+            <h3>Recent goal activity</h3>
+            <p>Internal savings movements are shown separately from expenses and income.</p>
+          </div>
+          {summary.recentGoalActivities.length === 0 ? (
+            <EmptyState title="No goal activity yet" description="Goal contributions and withdrawals will appear here once you start using goals." />
+          ) : (
+            <div className="simple-list">
+              {summary.recentGoalActivities.map((item) => (
+                <div key={item.id} className="list-row">
+                  <div>
+                    <strong>{item.type}: {item.goalName}</strong>
+                    <p>{item.accountName ?? "No linked account"} - {formatDate(item.occurredAtUtc)}</p>
+                    {item.note ? <small>{item.note}</small> : null}
+                  </div>
                   <strong>{formatCurrency(item.amount)}</strong>
                 </div>
-                <div className="chart-bar">
-                  <div className="chart-bar__fill" style={{ width: `${(item.amount / (maxSpend || 1)) * 100}%` }} />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="panel-card">
+          <div className="panel-card__header">
+            <h3>Spending by category</h3>
+            <p>Current month expense distribution.</p>
           </div>
-        )}
-      </section>
+          {summary.spendingByCategory.length === 0 ? (
+            <EmptyState title="No expense activity" description="The chart appears once expense transactions are recorded." />
+          ) : (
+            <div className="chart-list">
+              {summary.spendingByCategory.map((item) => (
+                <div key={item.categoryId} className="chart-row">
+                  <div className="chart-row__label">
+                    <span>{item.categoryName}</span>
+                    <strong>{formatCurrency(item.amount)}</strong>
+                  </div>
+                  <div className="chart-bar">
+                    <div className="chart-bar__fill" style={{ width: `${(item.amount / (maxSpend || 1)) * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

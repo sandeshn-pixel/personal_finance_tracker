@@ -1,4 +1,4 @@
-import { apiClient } from "../../../shared/lib/api/client";
+﻿import { apiClient, downloadFile } from "../../../shared/lib/api/client";
 
 export type ReportSummaryDto = {
   totalIncome: number;
@@ -40,7 +40,7 @@ export type ReportsQuery = {
   accountId?: string;
 };
 
-function toQueryString(query: ReportsQuery) {
+export function toQueryString(query: ReportsQuery) {
   const params = new URLSearchParams();
   params.set("startDateUtc", query.startDateUtc);
   params.set("endDateUtc", query.endDateUtc);
@@ -52,4 +52,5 @@ function toQueryString(query: ReportsQuery) {
 
 export const reportsApi = {
   overview: (accessToken: string, query: ReportsQuery) => apiClient<ReportsOverviewDto>(`/reports/overview?${toQueryString(query)}`, { accessToken }),
+  exportOverviewCsv: (accessToken: string, query: ReportsQuery) => downloadFile(`/exports/reports/overview.csv?${toQueryString(query)}`, "reports-overview.csv", { accessToken }),
 };

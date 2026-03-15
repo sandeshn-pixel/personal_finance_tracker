@@ -14,6 +14,7 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
         var now = DateTime.UtcNow;
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var nextMonth = monthStart.AddMonths(1);
+        var today = now.Date;
 
         var income = await dbContext.Transactions
             .Where(x => x.UserId == userId && !x.IsDeleted && x.Type == TransactionType.Income && x.DateUtc >= monthStart && x.DateUtc < nextMonth)
@@ -89,6 +90,49 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
             budgets.Count(x => actualsByCategory.GetValueOrDefault(x.CategoryId) > x.Amount),
             budgets.Count(x => x.Amount > 0m && ((actualsByCategory.GetValueOrDefault(x.CategoryId) / x.Amount) * 100m) >= x.AlertThresholdPercent));
 
-        return new DashboardSummaryDto(income, expense, netBalance, recent, spending, budgetHealth);
+        var goalEntries = await dbContext.GoalEntries
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.OccurredAtUtc >= monthStart && x.OccurredAtUtc < nextMonth)
+            .ToListAsync(cancellationToken);
+
+        var totalContributed = goalEntries.Where(x => x.Type == GoalEntryType.Contribution).Sum(x => x.Amount);
+        var totalWithdrawn = goalEntries.Where(x => x.Type == GoalEntryType.Withdrawal).Sum(x => x.Amount);
+
+        var activeGoalsCount = await dbContext.Goals.CountAsync(x => x.UserId == userId && x.Status == GoalStatus.Active, cancellationToken);
+        var completedGoalsCount = await dbContext.Goals.CountAsync(x => x.UserId == userId && x.Status == GoalStatus.Completed, cancellationToken);
+        var activeRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active, cancellationToken);
+        var pausedRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Paused, cancellationToken);
+        var dueRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active && x.AutoCreateTransaction && x.NextRunDateUtc != null && x.NextRunDateUtc <= today, cancellationToken);
+
+        var savingsAutomation = new SavingsAutomationSummaryDto(
+            totalContributed,
+            totalWithdrawn,
+            totalContributed - totalWithdrawn,
+            activeGoalsCount,
+            completedGoalsCount,
+            activeRecurringRulesCount,
+            pausedRecurringRulesCount,
+            dueRecurringRulesCount);
+
+        var recentGoalActivities = await dbContext.GoalEntries
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Include(x => x.Goal)
+            .Include(x => x.Account)
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.CreatedUtc)
+            .Take(6)
+            .Select(x => new RecentGoalActivityDto(
+                x.Id,
+                x.GoalId,
+                x.Goal.Name,
+                x.Type,
+                x.Amount,
+                x.OccurredAtUtc,
+                x.Note,
+                x.Account != null ? x.Account.Name : null))
+            .ToListAsync(cancellationToken);
+
+        return new DashboardSummaryDto(income, expense, netBalance, recent, spending, budgetHealth, savingsAutomation, recentGoalActivities);
     }
 }

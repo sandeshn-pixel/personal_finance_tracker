@@ -19,4 +19,8 @@ public sealed class Account : AuditableEntity
     public User User { get; set; } = null!;
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<Transaction> TransferTransactions { get; set; } = new List<Transaction>();
+    public ICollection<Goal> Goals { get; set; } = new List<Goal>();
+    public ICollection<GoalEntry> GoalEntries { get; set; } = new List<GoalEntry>();
+    public ICollection<RecurringTransactionRule> RecurringTransactionRules { get; set; } = new List<RecurringTransactionRule>();
+    public ICollection<RecurringTransactionRule> RecurringTransferTransactionRules { get; set; } = new List<RecurringTransactionRule>();
 }

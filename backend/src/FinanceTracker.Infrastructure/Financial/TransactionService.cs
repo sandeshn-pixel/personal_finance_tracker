@@ -15,53 +15,12 @@ public sealed class TransactionService(ApplicationDbContext dbContext, ICategory
     {
         var transactions = dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted)
+            .ApplyFilters(userId, query)
             .Include(x => x.Account)
             .Include(x => x.TransferAccount)
             .Include(x => x.Category)
             .Include(x => x.Tags)
             .AsQueryable();
-
-        if (query.StartDateUtc.HasValue)
-        {
-            transactions = transactions.Where(x => x.DateUtc >= query.StartDateUtc.Value);
-        }
-
-        if (query.EndDateUtc.HasValue)
-        {
-            transactions = transactions.Where(x => x.DateUtc <= query.EndDateUtc.Value);
-        }
-
-        if (query.CategoryId.HasValue)
-        {
-            transactions = transactions.Where(x => x.CategoryId == query.CategoryId.Value);
-        }
-
-        if (query.AccountId.HasValue)
-        {
-            transactions = transactions.Where(x => x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value);
-        }
-
-        if (query.Type.HasValue)
-        {
-            transactions = transactions.Where(x => x.Type == query.Type.Value);
-        }
-
-        if (query.MinAmount.HasValue)
-        {
-            transactions = transactions.Where(x => x.Amount >= query.MinAmount.Value);
-        }
-
-        if (query.MaxAmount.HasValue)
-        {
-            transactions = transactions.Where(x => x.Amount <= query.MaxAmount.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var term = $"%{query.Search.Trim()}%";
-            transactions = transactions.Where(x => EF.Functions.ILike(x.Note ?? string.Empty, term) || EF.Functions.ILike(x.Merchant ?? string.Empty, term));
-        }
 
         var totalCount = await transactions.CountAsync(cancellationToken);
         var items = await transactions

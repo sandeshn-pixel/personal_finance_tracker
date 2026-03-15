@@ -23,7 +23,7 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
 
             await context.Response.WriteAsJsonAsync(new ProblemDetails
             {
-                Title = "An unexpected error occurred.",
+                Title = "Unexpected server error",
                 Detail = "The request could not be completed.",
                 Status = StatusCodes.Status500InternalServerError
             });
@@ -32,12 +32,12 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
 
     private static Task WriteKnownProblemAsync(HttpContext context, ApplicationExceptionBase ex)
     {
-        var statusCode = ex switch
+        var (statusCode, title) = ex switch
         {
-            ValidationException => StatusCodes.Status400BadRequest,
-            ConflictException => StatusCodes.Status409Conflict,
-            NotFoundException => StatusCodes.Status404NotFound,
-            _ => StatusCodes.Status400BadRequest
+            ValidationException => (StatusCodes.Status400BadRequest, "Validation failed"),
+            ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
+            NotFoundException => (StatusCodes.Status404NotFound, "Not found"),
+            _ => (StatusCodes.Status400BadRequest, "Request error")
         };
 
         context.Response.StatusCode = statusCode;
@@ -45,7 +45,7 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
 
         return context.Response.WriteAsJsonAsync(new ProblemDetails
         {
-            Title = ex.GetType().Name,
+            Title = title,
             Detail = ex.Message,
             Status = statusCode
         });
