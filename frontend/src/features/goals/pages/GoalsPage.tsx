@@ -36,6 +36,35 @@ type GoalFormValues = z.infer<typeof goalSchema>;
 type EntryFormValues = z.infer<typeof entrySchema>;
 type EntryMode = "contribution" | "withdrawal";
 
+type GoalIconOption = { value: string; label: string; badge: string };
+type GoalColorOption = { value: string; label: string };
+
+const goalIconOptions: GoalIconOption[] = [
+  { value: "Shield", label: "Emergency", badge: "S" },
+  { value: "Home", label: "Home", badge: "H" },
+  { value: "Plane", label: "Travel", badge: "T" },
+  { value: "Book", label: "Education", badge: "E" },
+  { value: "Car", label: "Vehicle", badge: "C" },
+  { value: "Gift", label: "Gift", badge: "G" },
+];
+
+const goalColorOptions: GoalColorOption[] = [
+  { value: "teal", label: "Teal" },
+  { value: "amber", label: "Amber" },
+  { value: "navy", label: "Navy" },
+  { value: "forest", label: "Forest" },
+  { value: "rose", label: "Rose" },
+  { value: "slate", label: "Slate" },
+];
+
+function getGoalIcon(icon?: string | null) {
+  return goalIconOptions.find((option) => option.value === icon) ?? goalIconOptions[0];
+}
+
+function getGoalColor(color?: string | null) {
+  return goalColorOptions.find((option) => option.value === color) ?? goalColorOptions[0];
+}
+
 export function GoalsPage() {
   const { accessToken } = useAuth();
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
@@ -49,7 +78,7 @@ export function GoalsPage() {
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<GoalFormValues>({
     resolver: zodResolver(goalSchema),
-    defaultValues: { name: "", targetAmount: 0, targetDateUtc: "", linkedAccountId: "", icon: "", color: "" },
+    defaultValues: { name: "", targetAmount: 0, targetDateUtc: "", linkedAccountId: "", icon: goalIconOptions[0].value, color: goalColorOptions[0].value },
   });
 
   const entryForm = useForm<EntryFormValues>({
@@ -96,7 +125,7 @@ export function GoalsPage() {
 
   function resetGoalForm() {
     setEditing(null);
-    reset({ name: "", targetAmount: 0, targetDateUtc: "", linkedAccountId: "", icon: "", color: "" });
+    reset({ name: "", targetAmount: 0, targetDateUtc: "", linkedAccountId: "", icon: goalIconOptions[0].value, color: goalColorOptions[0].value });
   }
 
   function editGoal(goal: GoalDto) {
@@ -106,8 +135,8 @@ export function GoalsPage() {
       targetAmount: goal.targetAmount,
       targetDateUtc: toDateInputValue(goal.targetDateUtc ?? undefined),
       linkedAccountId: goal.linkedAccountId ?? "",
-      icon: goal.icon ?? "",
-      color: goal.color ?? "",
+      icon: goal.icon ?? goalIconOptions[0].value,
+      color: goal.color ?? goalColorOptions[0].value,
     });
   }
 
@@ -226,9 +255,17 @@ export function GoalsPage() {
                   {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </SelectField>
               </Field>
-              <Field label="Icon" error={errors.icon?.message}><input {...register("icon")} placeholder="Target" /></Field>
+              <Field label="Icon" error={errors.icon?.message}>
+                <SelectField {...register("icon")}>
+                  {goalIconOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectField>
+              </Field>
             </div>
-            <Field label="Color tag" error={errors.color?.message}><input {...register("color")} placeholder="#00ADB5" /></Field>
+            <Field label="Color theme" error={errors.color?.message}>
+              <SelectField {...register("color")}>
+                {goalColorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </SelectField>
+            </Field>
             <Button type="submit" loading={isSubmitting}>{editing ? "Save goal" : "Create goal"}</Button>
           </form>
         </section>
@@ -245,45 +282,65 @@ export function GoalsPage() {
               <div>
                 <h4 className="subsection-title">Active</h4>
                 <div className="budget-list">
-                  {activeGoals.map((goal) => (
-                    <article key={goal.id} className={`goal-card ${selectedGoalId === goal.id ? "goal-card--selected" : ""}`}>
-                      <button type="button" className="goal-card__body" onClick={() => setSelectedGoalId(goal.id)}>
-                        <div className="goal-card__header">
-                          <strong>{goal.name}</strong>
-                          <span className="status-badge status-badge--default">{goal.status}</span>
+                  {activeGoals.map((goal) => {
+                    const icon = getGoalIcon(goal.icon);
+                    const color = getGoalColor(goal.color);
+                    return (
+                      <article key={goal.id} className={`goal-card goal-card--${color.value} ${selectedGoalId === goal.id ? "goal-card--selected" : ""}`}>
+                        <button type="button" className="goal-card__body" onClick={() => setSelectedGoalId(goal.id)}>
+                          <div className="goal-card__header">
+                            <div className="goal-card__title-group">
+                              <span className={`goal-badge goal-badge--${color.value}`}>{icon.badge}</span>
+                              <div>
+                                <strong>{goal.name}</strong>
+                                <p>{icon.label}</p>
+                              </div>
+                            </div>
+                            <span className="status-badge status-badge--default">{goal.status}</span>
+                          </div>
+                          <p>{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)} saved</p>
+                          <ProgressBar value={goal.progressPercent} />
+                          <div className="budget-card__metrics">
+                            <span>{goal.progressPercent.toFixed(2)}% funded</span>
+                            <span>{formatCurrency(goal.remainingAmount)} remaining</span>
+                            <span>{goal.linkedAccountName ?? "Standalone goal"}</span>
+                          </div>
+                        </button>
+                        <div className="inline-actions">
+                          <button type="button" className="ghost-button ghost-button--small" onClick={() => editGoal(goal)}>Edit</button>
+                          <button type="button" className="ghost-button ghost-button--small" onClick={() => completeGoal(goal.id)}>Complete</button>
+                          <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveGoal(goal.id)}>Archive</button>
                         </div>
-                        <p>{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)} saved</p>
-                        <ProgressBar value={goal.progressPercent} />
-                        <div className="budget-card__metrics">
-                          <span>{goal.progressPercent.toFixed(2)}% funded</span>
-                          <span>{formatCurrency(goal.remainingAmount)} remaining</span>
-                          <span>{goal.linkedAccountName ?? "Standalone goal"}</span>
-                        </div>
-                      </button>
-                      <div className="inline-actions">
-                        <button type="button" className="ghost-button ghost-button--small" onClick={() => editGoal(goal)}>Edit</button>
-                        <button type="button" className="ghost-button ghost-button--small" onClick={() => completeGoal(goal.id)}>Complete</button>
-                        <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveGoal(goal.id)}>Archive</button>
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                   {activeGoals.length === 0 ? <EmptyState title="No active goals" description="Active goals appear here once you create them." /> : null}
                 </div>
               </div>
               <div>
                 <h4 className="subsection-title">Completed</h4>
                 <div className="budget-list">
-                  {completedGoals.map((goal) => (
-                    <article key={goal.id} className={`goal-card ${selectedGoalId === goal.id ? "goal-card--selected" : ""}`}>
-                      <button type="button" className="goal-card__body" onClick={() => setSelectedGoalId(goal.id)}>
-                        <div className="goal-card__header">
-                          <strong>{goal.name}</strong>
-                          <span className="status-badge status-badge--warning">Completed</span>
-                        </div>
-                        <p>{formatCurrency(goal.currentAmount)} saved • Target date {goal.targetDateUtc ? formatDate(goal.targetDateUtc) : "Flexible"}</p>
-                      </button>
-                    </article>
-                  ))}
+                  {completedGoals.map((goal) => {
+                    const icon = getGoalIcon(goal.icon);
+                    const color = getGoalColor(goal.color);
+                    return (
+                      <article key={goal.id} className={`goal-card goal-card--${color.value} ${selectedGoalId === goal.id ? "goal-card--selected" : ""}`}>
+                        <button type="button" className="goal-card__body" onClick={() => setSelectedGoalId(goal.id)}>
+                          <div className="goal-card__header">
+                            <div className="goal-card__title-group">
+                              <span className={`goal-badge goal-badge--${color.value}`}>{icon.badge}</span>
+                              <div>
+                                <strong>{goal.name}</strong>
+                                <p>{icon.label}</p>
+                              </div>
+                            </div>
+                            <span className="status-badge status-badge--warning">Completed</span>
+                          </div>
+                          <p>{formatCurrency(goal.currentAmount)} saved • Target date {goal.targetDateUtc ? formatDate(goal.targetDateUtc) : "Flexible"}</p>
+                        </button>
+                      </article>
+                    );
+                  })}
                   {completedGoals.length === 0 ? <EmptyState title="No completed goals" description="Completed goals stay visible here for historical review." /> : null}
                 </div>
               </div>
@@ -307,10 +364,15 @@ export function GoalsPage() {
           <EmptyState title="Select a goal" description="Choose a goal to review its audit trail or record a contribution or withdrawal." />
         ) : (
           <div className="goal-detail-layout">
-            <section className="panel-card panel-card--form goal-detail-panel">
+            <section className={`panel-card panel-card--form goal-detail-panel goal-detail-panel--${getGoalColor(selectedGoal.goal.color).value}`}>
               <div className="panel-card__header">
-                <h3>{selectedGoal.goal.name}</h3>
-                <p>{selectedGoal.goal.linkedAccountName ?? "No linked account"} • {selectedGoal.goal.targetDateUtc ? formatDate(selectedGoal.goal.targetDateUtc) : "No target date"}</p>
+                <div className="goal-detail-title">
+                  <span className={`goal-badge goal-badge--${getGoalColor(selectedGoal.goal.color).value}`}>{getGoalIcon(selectedGoal.goal.icon).badge}</span>
+                  <div>
+                    <h3>{selectedGoal.goal.name}</h3>
+                    <p>{selectedGoal.goal.linkedAccountName ?? "No linked account"} • {selectedGoal.goal.targetDateUtc ? formatDate(selectedGoal.goal.targetDateUtc) : "No target date"}</p>
+                  </div>
+                </div>
               </div>
               <ProgressBar value={selectedGoal.goal.progressPercent} tone={selectedGoal.goal.status === "Completed" ? "warning" : "default"} />
               <div className="budget-card__metrics">

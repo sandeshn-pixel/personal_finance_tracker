@@ -16,6 +16,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<GoalEntry> GoalEntries => Set<GoalEntry>();
     public DbSet<RecurringTransactionRule> RecurringTransactionRules => Set<RecurringTransactionRule>();
     public DbSet<RecurringTransactionExecution> RecurringTransactionExecutions => Set<RecurringTransactionExecution>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

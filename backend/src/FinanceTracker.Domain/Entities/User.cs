@@ -19,4 +19,5 @@ public sealed class User : AuditableEntity
     public ICollection<Goal> Goals { get; set; } = new List<Goal>();
     public ICollection<GoalEntry> GoalEntries { get; set; } = new List<GoalEntry>();
     public ICollection<RecurringTransactionRule> RecurringTransactionRules { get; set; } = new List<RecurringTransactionRule>();
+    public ICollection<UserNotification> Notifications { get; set; } = new List<UserNotification>();
 }

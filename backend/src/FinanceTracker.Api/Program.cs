@@ -2,12 +2,14 @@ using System.Text;
 using System.Text.Json.Serialization;
 using FinanceTracker.Api.Configuration;
 using FinanceTracker.Api.HealthChecks;
+using FinanceTracker.Api.HostedServices;
 using FinanceTracker.Api.Middleware;
 using FinanceTracker.Api.Options;
 using FinanceTracker.Api.Services;
 using FinanceTracker.Application;
 using FinanceTracker.Application.Auth.Interfaces;
 using FinanceTracker.Infrastructure;
+using FinanceTracker.Infrastructure.Automation;
 using FinanceTracker.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -39,6 +41,13 @@ builder.Services
     .AddOptions<FrontendOptions>()
     .Bind(builder.Configuration.GetSection(FrontendOptions.SectionName))
     .Validate(options => builder.Environment.IsDevelopment() || options.AllowedOrigins.Length > 0, "Frontend allowed origins must be configured outside development.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<AutomationOptions>()
+    .Bind(builder.Configuration.GetSection(AutomationOptions.SectionName))
+    .Validate(options => options.PollingIntervalSeconds >= 15, "Automation polling interval must be at least 15 seconds.")
+    .Validate(options => options.GoalReminderLookaheadDays is >= 1 and <= 30, "Goal reminder lookahead must be between 1 and 30 days.")
     .ValidateOnStart();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
@@ -100,6 +109,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+ builder.Services.AddHostedService<FinanceAutomationHostedService>();
 
 var app = builder.Build();
 

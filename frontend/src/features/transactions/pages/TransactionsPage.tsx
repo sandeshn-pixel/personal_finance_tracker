@@ -1,6 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
@@ -31,6 +31,8 @@ const transactionSchema = z.object({
 
 type TransactionFormValues = z.infer<typeof transactionSchema>;
 
+const commonPaymentMethods = ["UPI", "Debit Card", "Credit Card", "Cash", "Bank Transfer", "Net Banking", "Wallet", "Cheque", "Internal Transfer"];
+
 export function TransactionsPage() {
   const { accessToken } = useAuth();
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
@@ -43,9 +45,10 @@ export function TransactionsPage() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [paymentManual, setPaymentManual] = useState(false);
   const [filters, setFilters] = useState({ search: "", type: "", accountId: "", categoryId: "", startDateUtc: "", endDateUtc: "" });
 
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<TransactionFormValues>({
+  const { register, control, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
     defaultValues: { accountId: "", transferAccountId: "", type: "2", amount: 0, dateUtc: new Date().toISOString().slice(0, 10), categoryId: "", note: "", merchant: "", paymentMethod: "", tags: "" },
   });
@@ -95,11 +98,13 @@ export function TransactionsPage() {
 
   function resetForm() {
     setEditing(null);
+    setPaymentManual(false);
     reset({ accountId: accounts[0]?.id ?? "", transferAccountId: "", type: "2", amount: 0, dateUtc: new Date().toISOString().slice(0, 10), categoryId: "", note: "", merchant: "", paymentMethod: "", tags: "" });
   }
 
   function editTransaction(item: TransactionDto) {
     setEditing(item);
+    setPaymentManual(Boolean(item.paymentMethod) && !paymentMethodOptions.includes(item.paymentMethod ?? ""));
     reset({
       accountId: item.accountId,
       transferAccountId: item.transferAccountId ?? "",
@@ -170,6 +175,8 @@ export function TransactionsPage() {
     return [];
   }, [categories, type]);
 
+  const paymentMethodOptions = useMemo(() => Array.from(new Set([...commonPaymentMethods, ...transactions.map((item) => item.paymentMethod?.trim()).filter(Boolean) as string[]])).sort((left, right) => left.localeCompare(right)), [transactions]);
+
   if (loading) return <PageLoader label="Loading transactions" />;
 
   return (
@@ -230,11 +237,38 @@ export function TransactionsPage() {
             </div>
             <Field label="Date" error={errors.dateUtc?.message}><input {...register("dateUtc")} type="date" /></Field>
             <div className="field-grid">
-              <Field label="Merchant" error={errors.merchant?.message}><input {...register("merchant")} placeholder="Optional merchant" /></Field>
-              <Field label="Payment method" error={errors.paymentMethod?.message}><input {...register("paymentMethod")} placeholder="UPI / Card / Cash" /></Field>
+              <Field label="Merchant" error={errors.merchant?.message} hint="Use the name of the shop, website, company, or person involved.">
+                <input {...register("merchant")} placeholder="Whom you paid?" />
+              </Field>
+              <Controller
+                name="paymentMethod"
+                control={control}
+                render={({ field }) => (
+                  <Field label="Payment method" error={errors.paymentMethod?.message} hint="Dropdown-first with manual fallback for new methods.">
+                    <div className="dropdown-field-stack">
+                      <SelectField value={paymentManual ? "__manual__" : field.value || ""} onChange={(event) => {
+                        if (event.target.value === "__manual__") {
+                          setPaymentManual(true);
+                          field.onChange("");
+                          return;
+                        }
+                        setPaymentManual(false);
+                        field.onChange(event.target.value);
+                      }}>
+                        <option value="">Select payment method</option>
+                        {paymentMethodOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                        <option value="__manual__">Enter manually</option>
+                      </SelectField>
+                      {paymentManual ? <input value={field.value || ""} onChange={field.onChange} placeholder="Enter payment method" /> : null}
+                    </div>
+                  </Field>
+                )}
+              />
             </div>
             <Field label="Note" error={errors.note?.message}><input {...register("note")} placeholder="Optional note" /></Field>
-            <Field label="Tags" hint="Comma-separated" error={errors.tags?.message}><input {...register("tags")} placeholder="salary, monthly" /></Field>
+            <Field label="Tags" hint="Optional comma-separated labels for extra grouping." error={errors.tags?.message}>
+              <input {...register("tags")} placeholder="office, team-lunch, reimbursable, Food, Travel, Salary" />
+            </Field>
             <Button type="submit" loading={isSubmitting}>{editing ? "Save transaction" : "Add transaction"}</Button>
           </form>
         </section>

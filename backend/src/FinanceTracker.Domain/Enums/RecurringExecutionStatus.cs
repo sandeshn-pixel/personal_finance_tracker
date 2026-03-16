@@ -5,5 +5,6 @@ public enum RecurringExecutionStatus
     Processing = 1,
     Completed = 2,
     Skipped = 3,
-    Failed = 4
+    Failed = 4,
+    Reminded = 5
 }

@@ -7,6 +7,45 @@ export type CategorySpendDto = {
   amount: number;
 };
 
+export type TrendPointDto = {
+  label: string;
+  income: number;
+  expense: number;
+};
+
+export type AccountBalanceSliceDto = {
+  accountId: string;
+  accountName: string;
+  accountType: string;
+  currencyCode: string;
+  currentBalance: number;
+};
+
+export type GoalProgressDto = {
+  goalId: string;
+  goalName: string;
+  icon?: string | null;
+  color?: string | null;
+  currentAmount: number;
+  targetAmount: number;
+  progressPercent: number;
+  linkedAccountName?: string | null;
+  targetDateUtc?: string | null;
+  status: "Active" | "Completed" | "Archived";
+};
+
+export type BudgetUsageItemDto = {
+  budgetId: string;
+  categoryId: string;
+  categoryName: string;
+  budgeted: number;
+  spent: number;
+  remaining: number;
+  usagePercent: number;
+  isOverBudget: boolean;
+  isThresholdReached: boolean;
+};
+
 export type BudgetHealthDto = {
   totalBudgeted: number;
   totalSpent: number;
@@ -43,6 +82,10 @@ export type DashboardSummaryDto = {
   netBalance: number;
   recentTransactions: TransactionDto[];
   spendingByCategory: CategorySpendDto[];
+  incomeExpenseTrend: TrendPointDto[];
+  accountBalanceDistribution: AccountBalanceSliceDto[];
+  goalProgress: GoalProgressDto[];
+  budgetUsage: BudgetUsageItemDto[];
   budgetHealth: BudgetHealthDto;
   savingsAutomation: SavingsAutomationSummaryDto;
   recentGoalActivities: RecentGoalActivityDto[];

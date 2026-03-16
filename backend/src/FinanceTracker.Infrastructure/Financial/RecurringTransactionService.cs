@@ -1,4 +1,6 @@
 using FinanceTracker.Application.Common;
+using FinanceTracker.Application.Notifications.DTOs;
+using FinanceTracker.Application.Notifications.Interfaces;
 using FinanceTracker.Application.RecurringTransactions.DTOs;
 using FinanceTracker.Application.RecurringTransactions.Interfaces;
 using FinanceTracker.Application.Transactions.DTOs;
@@ -10,7 +12,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Financial;
 
-public sealed class RecurringTransactionService(ApplicationDbContext dbContext, ITransactionService transactionService) : IRecurringTransactionService
+public sealed class RecurringTransactionService(
+    ApplicationDbContext dbContext,
+    ITransactionService transactionService,
+    INotificationService notificationService) : IRecurringTransactionService
 {
     public async Task<IReadOnlyCollection<RecurringTransactionDto>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -46,8 +51,8 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
     public async Task<RecurringTransactionDto> CreateAsync(Guid userId, CreateRecurringTransactionRequest request, CancellationToken cancellationToken)
     {
         var resolved = await ResolveReferencesAsync(userId, request.Type, request.AccountId, request.TransferAccountId, request.CategoryId, cancellationToken);
-        var startDate = NormalizeDate(request.StartDateUtc);
-        DateTime? endDate = request.EndDateUtc.HasValue ? NormalizeDate(request.EndDateUtc.Value) : null;
+        var startDate = RecurringScheduleCalculator.NormalizeDate(request.StartDateUtc);
+        DateTime? endDate = request.EndDateUtc.HasValue ? RecurringScheduleCalculator.NormalizeDate(request.EndDateUtc.Value) : null;
 
         var rule = new RecurringTransactionRule
         {
@@ -61,7 +66,7 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             Frequency = request.Frequency,
             StartDateUtc = startDate,
             EndDateUtc = endDate,
-            NextRunDateUtc = CalculateInitialNextRun(startDate, endDate),
+            NextRunDateUtc = RecurringScheduleCalculator.CalculateInitialNextRun(startDate, endDate),
             AutoCreateTransaction = request.AutoCreateTransaction,
             Status = endDate.HasValue && startDate > endDate.Value ? RecurringRuleStatus.Completed : RecurringRuleStatus.Active
         };
@@ -86,8 +91,8 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             ?? throw new NotFoundException("Recurring rule was not found.");
 
         var resolved = await ResolveReferencesAsync(userId, request.Type, request.AccountId, request.TransferAccountId, request.CategoryId, cancellationToken);
-        var startDate = NormalizeDate(request.StartDateUtc);
-        DateTime? endDate = request.EndDateUtc.HasValue ? NormalizeDate(request.EndDateUtc.Value) : null;
+        var startDate = RecurringScheduleCalculator.NormalizeDate(request.StartDateUtc);
+        DateTime? endDate = request.EndDateUtc.HasValue ? RecurringScheduleCalculator.NormalizeDate(request.EndDateUtc.Value) : null;
 
         rule.Title = request.Title.Trim();
         rule.Type = request.Type;
@@ -105,7 +110,7 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
 
         if (rule.Status != RecurringRuleStatus.Deleted)
         {
-            rule.NextRunDateUtc = RecalculateNextRunDate(rule, rule.Executions);
+            rule.NextRunDateUtc = RecurringScheduleCalculator.RecalculateNextRunDate(rule, rule.Executions);
             rule.Status = rule.NextRunDateUtc.HasValue
                 ? (rule.Status == RecurringRuleStatus.Paused ? RecurringRuleStatus.Paused : RecurringRuleStatus.Active)
                 : RecurringRuleStatus.Completed;
@@ -150,7 +155,7 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             throw new ValidationException("Only paused recurring rules can be resumed.");
         }
 
-        rule.NextRunDateUtc = RecalculateNextRunDate(rule, rule.Executions);
+        rule.NextRunDateUtc = RecurringScheduleCalculator.RecalculateNextRunDate(rule, rule.Executions);
         rule.Status = rule.NextRunDateUtc.HasValue ? RecurringRuleStatus.Active : RecurringRuleStatus.Completed;
         await dbContext.SaveChangesAsync(cancellationToken);
         return MapRule(rule);
@@ -169,7 +174,7 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
 
     public async Task<RecurringExecutionSummaryDto> ProcessDueAsync(Guid userId, DateTime asOfUtc, CancellationToken cancellationToken)
     {
-        var normalizedAsOf = NormalizeDate(asOfUtc);
+        var normalizedAsOf = RecurringScheduleCalculator.NormalizeDate(asOfUtc);
         var rules = await dbContext.RecurringTransactionRules
             .Where(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active && x.AutoCreateTransaction && x.NextRunDateUtc != null && x.NextRunDateUtc <= normalizedAsOf)
             .OrderBy(x => x.NextRunDateUtc)
@@ -209,14 +214,15 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             return (false, false, false, false);
         }
 
-        var scheduledDate = NormalizeDate(rule.NextRunDateUtc.Value);
+        var scheduledDate = RecurringScheduleCalculator.NormalizeDate(rule.NextRunDateUtc.Value);
         var execution = rule.Executions.SingleOrDefault(x => x.ScheduledForDateUtc == scheduledDate);
         if (execution is not null)
         {
             var recovered = await TryRecoverExecutionAsync(userId, rule, execution, cancellationToken);
             if (recovered)
             {
-                await AdvanceRuleAsync(rule, scheduledDate);
+                RecurringScheduleCalculator.AdvanceRule(rule, scheduledDate);
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return (rule.NextRunDateUtc is not null && rule.NextRunDateUtc <= asOfUtc, false, true, false);
             }
 
@@ -271,7 +277,7 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             execution.Status = RecurringExecutionStatus.Completed;
             execution.TransactionId = createdTransaction.Id;
             execution.ProcessedAtUtc = DateTime.UtcNow;
-            await AdvanceRuleAsync(rule, scheduledDate);
+            RecurringScheduleCalculator.AdvanceRule(rule, scheduledDate);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             return (rule.NextRunDateUtc is not null && rule.NextRunDateUtc <= asOfUtc, true, true, false);
@@ -282,6 +288,14 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             execution.FailureReason = ex.Message.Length > 280 ? ex.Message[..280] : ex.Message;
             execution.ProcessedAtUtc = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notificationService.PublishAsync(new PublishNotificationRequest(
+                rule.UserId,
+                NotificationType.RecurringExecutionFailed,
+                NotificationLevel.Warning,
+                $"Recurring rule failed: {rule.Title}",
+                $"{rule.Title} could not create its scheduled transaction for {scheduledDate:dd MMM yyyy}. {execution.FailureReason}",
+                "/recurring",
+                $"recurring-failed:{execution.Id}"), cancellationToken);
             return (false, false, false, true);
         }
     }
@@ -317,23 +331,6 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
         execution.FailureReason = null;
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
-    }
-
-    private static Task AdvanceRuleAsync(RecurringTransactionRule rule, DateTime processedDate)
-    {
-        var nextRun = CalculateNextOccurrence(rule.Frequency, processedDate);
-        if (rule.EndDateUtc.HasValue && nextRun > NormalizeDate(rule.EndDateUtc.Value))
-        {
-            rule.NextRunDateUtc = null;
-            rule.Status = RecurringRuleStatus.Completed;
-        }
-        else
-        {
-            rule.NextRunDateUtc = nextRun;
-            rule.Status = RecurringRuleStatus.Active;
-        }
-
-        return Task.CompletedTask;
     }
 
     private async Task<(Account SourceAccount, Account? TransferAccount, Category? Category)> ResolveReferencesAsync(Guid userId, TransactionType type, Guid accountId, Guid? transferAccountId, Guid? categoryId, CancellationToken cancellationToken)
@@ -414,48 +411,5 @@ public sealed class RecurringTransactionService(ApplicationDbContext dbContext, 
             lastProcessedAtUtc);
     }
 
-    private static DateTime? RecalculateNextRunDate(RecurringTransactionRule rule, IEnumerable<RecurringTransactionExecution> executions)
-    {
-        var nextRun = rule.StartDateUtc;
-        var lastCompleted = executions
-            .Where(x => x.Status == RecurringExecutionStatus.Completed)
-            .OrderByDescending(x => x.ScheduledForDateUtc)
-            .Select(x => (DateTime?)x.ScheduledForDateUtc)
-            .FirstOrDefault();
-
-        if (lastCompleted.HasValue)
-        {
-            nextRun = CalculateNextOccurrence(rule.Frequency, lastCompleted.Value);
-        }
-
-        if (rule.EndDateUtc.HasValue && nextRun > NormalizeDate(rule.EndDateUtc.Value))
-        {
-            return null;
-        }
-
-        return nextRun;
-    }
-
-    private static DateTime? CalculateInitialNextRun(DateTime startDateUtc, DateTime? endDateUtc)
-    {
-        if (endDateUtc.HasValue && startDateUtc > endDateUtc.Value)
-        {
-            return null;
-        }
-
-        return startDateUtc;
-    }
-
-    private static DateTime CalculateNextOccurrence(RecurringFrequency frequency, DateTime currentDateUtc)
-        => frequency switch
-        {
-            RecurringFrequency.Daily => currentDateUtc.AddDays(1),
-            RecurringFrequency.Weekly => currentDateUtc.AddDays(7),
-            RecurringFrequency.Monthly => currentDateUtc.AddMonths(1),
-            RecurringFrequency.Yearly => currentDateUtc.AddYears(1),
-            _ => throw new ValidationException("Unsupported recurring frequency.")
-        };
-
-    private static DateTime NormalizeDate(DateTime value) => DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
     private static decimal RoundMoney(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 }

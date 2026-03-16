@@ -39,6 +39,13 @@ const typeToValue: Record<AccountDto["type"], AccountFormValues["type"]> = {
   SavingsAccount: "4",
 };
 
+const typeLabels: Record<AccountDto["type"], string> = {
+  BankAccount: "Bank account",
+  CreditCard: "Credit card",
+  CashWallet: "Cash wallet",
+  SavingsAccount: "Savings account",
+};
+
 export function AccountsPage() {
   const { accessToken } = useAuth();
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
@@ -159,7 +166,7 @@ export function AccountsPage() {
                 <article key={account.id} className={`account-card ${account.isArchived ? "account-card--archived" : ""}`}>
                   <div>
                     <strong>{account.name}</strong>
-                    <p>{account.type} • {account.currencyCode}</p>
+                    <p>{typeLabels[account.type]} â€¢ {account.currencyCode}</p>
                     <small>{account.institutionName || "Personal ledger"}</small>
                   </div>
                   <div className="account-card__aside">

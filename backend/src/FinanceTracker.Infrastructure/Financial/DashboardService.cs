@@ -24,9 +24,13 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
             .Where(x => x.UserId == userId && !x.IsDeleted && x.Type == TransactionType.Expense && x.DateUtc >= monthStart && x.DateUtc < nextMonth)
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
 
-        var netBalance = await dbContext.Accounts
+        var accounts = await dbContext.Accounts
+            .AsNoTracking()
             .Where(x => x.UserId == userId && !x.IsArchived)
-            .SumAsync(x => (decimal?)x.CurrentBalance, cancellationToken) ?? 0m;
+            .OrderByDescending(x => x.CurrentBalance)
+            .ToListAsync(cancellationToken);
+
+        var netBalance = accounts.Sum(x => x.CurrentBalance);
 
         var recentTransactions = await dbContext.Transactions
             .AsNoTracking()
@@ -61,11 +65,15 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
                 x.UpdatedUtc))
             .ToList();
 
-        var expenseTransactions = await dbContext.Transactions
+        var monthTransactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted && x.Type == TransactionType.Expense && x.DateUtc >= monthStart && x.DateUtc < nextMonth && x.CategoryId != null)
+            .Where(x => x.UserId == userId && !x.IsDeleted && x.DateUtc >= monthStart && x.DateUtc < nextMonth)
             .Include(x => x.Category)
             .ToListAsync(cancellationToken);
+
+        var expenseTransactions = monthTransactions
+            .Where(x => x.Type == TransactionType.Expense && x.CategoryId != null)
+            .ToList();
 
         var spending = expenseTransactions
             .Where(x => x.Category is not null)
@@ -74,14 +82,43 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
             .OrderByDescending(x => x.Amount)
             .ToList();
 
+        var incomeExpenseTrend = BuildIncomeExpenseTrend(monthTransactions, monthStart, nextMonth);
+
+        var accountBalanceDistribution = accounts
+            .Select(x => new AccountBalanceSliceDto(x.Id, x.Name, x.Type.ToString(), x.CurrencyCode, x.CurrentBalance))
+            .ToList();
+
         var budgets = await dbContext.Budgets
             .AsNoTracking()
+            .Include(x => x.Category)
             .Where(x => x.UserId == userId && x.Year == monthStart.Year && x.Month == monthStart.Month)
             .ToListAsync(cancellationToken);
 
         var actualsByCategory = expenseTransactions
             .GroupBy(x => x.CategoryId!.Value)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+
+        var budgetUsage = budgets
+            .Select(x =>
+            {
+                var spent = actualsByCategory.GetValueOrDefault(x.CategoryId);
+                var remaining = x.Amount - spent;
+                var usagePercent = x.Amount == 0m ? 0m : decimal.Round((spent / x.Amount) * 100m, 2, MidpointRounding.AwayFromZero);
+                return new BudgetUsageItemDto(
+                    x.Id,
+                    x.CategoryId,
+                    x.Category.Name,
+                    x.Amount,
+                    spent,
+                    remaining,
+                    usagePercent,
+                    spent > x.Amount,
+                    x.Amount > 0m && usagePercent >= x.AlertThresholdPercent);
+            })
+            .OrderByDescending(x => x.UsagePercent)
+            .ThenByDescending(x => x.Spent)
+            .Take(5)
+            .ToList();
 
         var budgetHealth = new BudgetHealthDto(
             budgets.Sum(x => x.Amount),
@@ -98,11 +135,34 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
         var totalContributed = goalEntries.Where(x => x.Type == GoalEntryType.Contribution).Sum(x => x.Amount);
         var totalWithdrawn = goalEntries.Where(x => x.Type == GoalEntryType.Withdrawal).Sum(x => x.Amount);
 
+        var goals = await dbContext.Goals
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.Status != GoalStatus.Archived)
+            .Include(x => x.LinkedAccount)
+            .OrderByDescending(x => x.Status == GoalStatus.Active)
+            .ThenByDescending(x => x.CurrentAmount)
+            .Take(4)
+            .ToListAsync(cancellationToken);
+
+        var goalProgress = goals
+            .Select(x => new GoalProgressDto(
+                x.Id,
+                x.Name,
+                x.Icon,
+                x.Color,
+                x.CurrentAmount,
+                x.TargetAmount,
+                x.TargetAmount == 0m ? 0m : decimal.Round((x.CurrentAmount / x.TargetAmount) * 100m, 2, MidpointRounding.AwayFromZero),
+                x.LinkedAccount?.Name,
+                x.TargetDateUtc,
+                x.Status))
+            .ToList();
+
         var activeGoalsCount = await dbContext.Goals.CountAsync(x => x.UserId == userId && x.Status == GoalStatus.Active, cancellationToken);
         var completedGoalsCount = await dbContext.Goals.CountAsync(x => x.UserId == userId && x.Status == GoalStatus.Completed, cancellationToken);
         var activeRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active, cancellationToken);
         var pausedRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Paused, cancellationToken);
-        var dueRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active && x.AutoCreateTransaction && x.NextRunDateUtc != null && x.NextRunDateUtc <= today, cancellationToken);
+        var dueRecurringRulesCount = await dbContext.RecurringTransactionRules.CountAsync(x => x.UserId == userId && x.Status == RecurringRuleStatus.Active && x.NextRunDateUtc != null && x.NextRunDateUtc <= today, cancellationToken);
 
         var savingsAutomation = new SavingsAutomationSummaryDto(
             totalContributed,
@@ -133,6 +193,43 @@ public sealed class DashboardService(ApplicationDbContext dbContext) : IDashboar
                 x.Account != null ? x.Account.Name : null))
             .ToListAsync(cancellationToken);
 
-        return new DashboardSummaryDto(income, expense, netBalance, recent, spending, budgetHealth, savingsAutomation, recentGoalActivities);
+        return new DashboardSummaryDto(
+            income,
+            expense,
+            netBalance,
+            recent,
+            spending,
+            incomeExpenseTrend,
+            accountBalanceDistribution,
+            goalProgress,
+            budgetUsage,
+            budgetHealth,
+            savingsAutomation,
+            recentGoalActivities);
+    }
+
+    private static IReadOnlyCollection<TrendPointDto> BuildIncomeExpenseTrend(IReadOnlyCollection<Domain.Entities.Transaction> monthTransactions, DateTime monthStart, DateTime nextMonth)
+    {
+        var periods = new List<(DateTime Start, DateTime End, string Label)>();
+        var cursor = monthStart;
+        var week = 1;
+        while (cursor < nextMonth)
+        {
+            var periodEnd = cursor.AddDays(7);
+            if (periodEnd > nextMonth)
+            {
+                periodEnd = nextMonth;
+            }
+
+            periods.Add((cursor, periodEnd, $"Week {week}"));
+            cursor = periodEnd;
+            week++;
+        }
+
+        return periods.Select(period => new TrendPointDto(
+            period.Label,
+            monthTransactions.Where(x => x.Type == TransactionType.Income && x.DateUtc >= period.Start && x.DateUtc < period.End).Sum(x => x.Amount),
+            monthTransactions.Where(x => x.Type == TransactionType.Expense && x.DateUtc >= period.Start && x.DateUtc < period.End).Sum(x => x.Amount)))
+            .ToList();
     }
 }

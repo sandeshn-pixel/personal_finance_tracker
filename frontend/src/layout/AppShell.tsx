@@ -1,6 +1,9 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/providers/AuthProvider";
+import { notificationsApi, type NotificationDto, type NotificationFeedDto } from "../features/notifications/api/notificationsApi";
+import { ApiError } from "../shared/lib/api/client";
+import { formatDate } from "../shared/lib/format";
 
 const navigationItems = [
   { to: "/dashboard", label: "Dashboard" },
@@ -16,17 +19,114 @@ const navigationItems = [
 export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, accessToken, logout } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationFeed, setNotificationFeed] = useState<NotificationFeedDto>({ unreadCount: 0, items: [] });
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
   const initials = [user?.firstName?.charAt(0) ?? "", user?.lastName?.charAt(0) ?? ""].join("").toUpperCase();
 
   useEffect(() => {
     setIsSidebarOpen(false);
+    setIsNotificationsOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setNotificationFeed({ unreadCount: 0, items: [] });
+      return;
+    }
+
+    const token = accessToken;
+    let cancelled = false;
+    let intervalId: number | undefined;
+
+    async function loadNotifications() {
+      setLoadingNotifications(true);
+      try {
+        const feed = await notificationsApi.list(token, false, 8);
+        if (!cancelled) {
+          setNotificationFeed(feed);
+          setNotificationError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingNotifications(false);
+        }
+      }
+    }
+
+    void loadNotifications();
+    intervalId = window.setInterval(() => { void loadNotifications(); }, 60000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [accessToken]);
 
   async function handleLogout() {
     await logout();
     navigate("/login", { replace: true });
+  }
+
+  async function toggleNotifications() {
+    if (!accessToken) {
+      return;
+    }
+
+    if (!isNotificationsOpen) {
+      setLoadingNotifications(true);
+      try {
+        const feed = await notificationsApi.list(accessToken, false, 8);
+        setNotificationFeed(feed);
+        setNotificationError(null);
+      } catch (error) {
+        setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+      } finally {
+        setLoadingNotifications(false);
+      }
+    }
+
+    setIsNotificationsOpen((current) => !current);
+  }
+
+  async function markAllNotificationsRead() {
+    if (!accessToken || notificationFeed.unreadCount === 0) {
+      return;
+    }
+
+    await notificationsApi.markAllRead(accessToken);
+    setNotificationFeed((current) => ({
+      unreadCount: 0,
+      items: current.items.map((item) => ({ ...item, isRead: true, readAtUtc: item.readAtUtc ?? new Date().toISOString() })),
+    }));
+  }
+
+  async function handleNotificationClick(notification: NotificationDto) {
+    if (!accessToken) {
+      return;
+    }
+
+    if (!notification.isRead) {
+      await notificationsApi.markRead(accessToken, notification.id);
+      setNotificationFeed((current) => ({
+        unreadCount: Math.max(current.unreadCount - 1, 0),
+        items: current.items.map((item) => item.id === notification.id ? { ...item, isRead: true, readAtUtc: new Date().toISOString() } : item),
+      }));
+    }
+
+    setIsNotificationsOpen(false);
+    if (notification.route) {
+      navigate(notification.route);
+    }
   }
 
   return (
@@ -52,7 +152,7 @@ export function AppShell() {
         </nav>
         <div className="sidebar-spacer" />
         <button type="button" className="ghost-button" onClick={handleLogout} aria-label="Log out">Logout</button>
-        <div className="sidebar-footnote">Accounts, transactions, budgets, dashboard insights, and core reporting are now active.</div>
+        <div className="sidebar-footnote">Accounts, transactions, budgets, goals, recurring automation, and reminders are active.</div>
       </aside>
       <div className="shell-main">
         <header className="topbar">
@@ -64,6 +164,38 @@ export function AppShell() {
             </div>
           </div>
           <div className="topbar-actions">
+            <div className="notification-shell">
+              <button type="button" className="notification-button" onClick={() => void toggleNotifications()} aria-haspopup="dialog" aria-expanded={isNotificationsOpen} aria-label="Open notifications">
+                <span aria-hidden="true">Alerts</span>
+                {notificationFeed.unreadCount > 0 ? <span className="notification-count">{notificationFeed.unreadCount}</span> : null}
+              </button>
+              {isNotificationsOpen ? (
+                <div className="notification-panel" role="dialog" aria-label="Notifications">
+                  <div className="notification-panel__header">
+                    <div>
+                      <strong>Notifications</strong>
+                      <p>{notificationFeed.unreadCount} unread</p>
+                    </div>
+                    <button type="button" className="ghost-button ghost-button--small" onClick={() => void markAllNotificationsRead()} disabled={notificationFeed.unreadCount === 0}>Mark all read</button>
+                  </div>
+                  {notificationError ? <p className="notification-panel__state">{notificationError}</p> : null}
+                  {loadingNotifications ? <p className="notification-panel__state">Loading notifications...</p> : null}
+                  {!loadingNotifications && notificationFeed.items.length === 0 ? <p className="notification-panel__state">No notifications right now.</p> : null}
+                  <div className="notification-list">
+                    {notificationFeed.items.map((notification) => (
+                      <button key={notification.id} type="button" className={`notification-item${notification.isRead ? " notification-item--read" : ""}`} onClick={() => void handleNotificationClick(notification)}>
+                        <span className={`notification-dot notification-dot--${notification.level.toLowerCase()}`} aria-hidden="true" />
+                        <span className="notification-item__content">
+                          <strong>{notification.title}</strong>
+                          <span>{notification.message}</span>
+                          <small>{formatDate(notification.createdUtc)}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <div className="user-badge user-badge--avatar-only" aria-label="Signed-in user initials">
               <span className="user-badge__avatar" aria-hidden="true">{initials}</span>
             </div>

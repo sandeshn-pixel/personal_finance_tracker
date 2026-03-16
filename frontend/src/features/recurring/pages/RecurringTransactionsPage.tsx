@@ -197,7 +197,7 @@ export function RecurringTransactionsPage() {
 
   return (
     <div className="page-stack">
-      <SectionHeader title="Recurring transactions" description="Define reusable rules, pause and resume schedules, and manually process due occurrences until background jobs are added." action={<Button type="button" onClick={processDueRules}>Process due now</Button>} />
+      <SectionHeader title="Recurring transactions" description="Define reusable rules, pause and resume schedules, and keep manual processing available as a fallback alongside the background scheduler." action={<Button type="button" onClick={processDueRules}>Run due now</Button>} />
       {errorMessage ? <Alert message={errorMessage} /> : null}
       {processingSummary ? <Alert message={`Processed ${processingSummary.occurrencesProcessed} occurrences and created ${processingSummary.transactionsCreated} transactions.`} /> : null}
       <div className="stats-grid stats-grid--four">
@@ -280,7 +280,7 @@ export function RecurringTransactionsPage() {
                     </div>
                     <div className="budget-card__aside">
                       <span className={`status-badge status-badge--${rule.status === "Active" ? "default" : rule.status === "Paused" ? "warning" : "danger"}`}>{rule.status}</span>
-                      <small>{rule.autoCreateTransaction ? "Auto-create on" : "Manual processing only"}</small>
+                      <small>{rule.autoCreateTransaction ? "Auto-create" : "Reminder only"}</small>
                     </div>
                   </div>
                   <div className="budget-card__metrics">

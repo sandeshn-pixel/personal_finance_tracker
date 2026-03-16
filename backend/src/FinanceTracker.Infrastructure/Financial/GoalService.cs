@@ -1,6 +1,8 @@
 using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Goals.DTOs;
 using FinanceTracker.Application.Goals.Interfaces;
+using FinanceTracker.Application.Notifications.DTOs;
+using FinanceTracker.Application.Notifications.Interfaces;
 using FinanceTracker.Domain.Entities;
 using FinanceTracker.Domain.Enums;
 using FinanceTracker.Infrastructure.Persistence;
@@ -8,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Financial;
 
-public sealed class GoalService(ApplicationDbContext dbContext) : IGoalService
+public sealed class GoalService(ApplicationDbContext dbContext, INotificationService notificationService) : IGoalService
 {
     public async Task<IReadOnlyCollection<GoalDto>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -133,6 +135,7 @@ public sealed class GoalService(ApplicationDbContext dbContext) : IGoalService
 
         goal.Status = GoalStatus.Completed;
         await dbContext.SaveChangesAsync(cancellationToken);
+        await PublishGoalCompletedNotificationAsync(goal, cancellationToken);
         return MapGoal(goal);
     }
 
@@ -194,6 +197,7 @@ public sealed class GoalService(ApplicationDbContext dbContext) : IGoalService
             }
         }
 
+        var previousStatus = goal.Status;
         goal.Status = ResolveGoalStatus(goal.Status, goal.CurrentAmount, goal.TargetAmount);
 
         var entry = new GoalEntry
@@ -212,7 +216,24 @@ public sealed class GoalService(ApplicationDbContext dbContext) : IGoalService
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        if (previousStatus != GoalStatus.Completed && goal.Status == GoalStatus.Completed)
+        {
+            await PublishGoalCompletedNotificationAsync(goal, cancellationToken);
+        }
+
         return await GetAsync(userId, goal.Id, cancellationToken) ?? throw new NotFoundException("Goal was not found after recording the entry.");
+    }
+
+    private async Task PublishGoalCompletedNotificationAsync(Goal goal, CancellationToken cancellationToken)
+    {
+        await notificationService.PublishAsync(new PublishNotificationRequest(
+            goal.UserId,
+            NotificationType.GoalCompleted,
+            NotificationLevel.Success,
+            $"Goal completed: {goal.Name}",
+            $"{goal.Name} reached its target amount of {goal.TargetAmount:0.00}.",
+            "/goals",
+            $"goal-completed:{goal.Id}"), cancellationToken);
     }
 
     private async Task<Account?> ResolveLinkedAccountAsync(Guid userId, Guid? linkedAccountId, CancellationToken cancellationToken)
