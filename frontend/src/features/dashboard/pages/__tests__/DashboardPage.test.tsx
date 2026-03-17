@@ -1,4 +1,4 @@
-﻿import { render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 
 const useAuthMock = vi.fn();
@@ -27,6 +27,12 @@ describe("DashboardPage", () => {
       netBalance: 900,
       recentTransactions: [],
       spendingByCategory: [],
+      incomeExpenseTrend: [],
+      accountBalanceDistribution: [
+        { accountId: "a1", accountName: "Primary", accountType: "BankAccount", currencyCode: "INR", currentBalance: 900 },
+      ],
+      goalProgress: [],
+      budgetUsage: [],
       budgetHealth: { totalBudgeted: 500, totalSpent: 300, totalRemaining: 200, overBudgetCount: 0, thresholdReachedCount: 1 },
       savingsAutomation: { totalContributedToGoals: 100, totalWithdrawnFromGoals: 20, netGoalSavings: 80, activeGoalsCount: 2, completedGoalsCount: 1, activeRecurringRulesCount: 3, pausedRecurringRulesCount: 1, dueRecurringRulesCount: 1 },
       recentGoalActivities: [],
@@ -34,8 +40,9 @@ describe("DashboardPage", () => {
 
     render(<DashboardPage />);
 
-    expect(await screen.findByText("Current month income")).toBeInTheDocument();
+    expect(await screen.findByText("Current month income vs expense")).toBeInTheDocument();
     expect(screen.getByText("Saved to goals")).toBeInTheDocument();
     expect(screen.getByText("Recurring rules")).toBeInTheDocument();
+    expect(screen.getByText("Account balance split")).toBeInTheDocument();
   });
 });
