@@ -230,8 +230,8 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
             goal.UserId,
             NotificationType.GoalCompleted,
             NotificationLevel.Success,
-            $"Goal completed: {goal.Name}",
-            $"{goal.Name} reached its target amount of {goal.TargetAmount:0.00}.",
+            $"Goal reached: {goal.Name}",
+            $"{goal.Name} has reached its target amount of {goal.TargetAmount:0.00}. You can keep contributing, archive it, or start a new goal.",
             "/goals",
             $"goal-completed:{goal.Id}"), cancellationToken);
     }

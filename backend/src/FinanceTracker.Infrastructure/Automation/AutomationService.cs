@@ -91,8 +91,8 @@ public sealed class AutomationService(
                 rule.UserId,
                 NotificationType.RecurringDueReminder,
                 NotificationLevel.Info,
-                $"{rule.Title} is due",
-                $"Your {rule.Frequency.ToString().ToLowerInvariant()} recurring {rule.Type.ToString().ToLowerInvariant()} is due for {scheduledDate:dd MMM yyyy}.",
+                $"Recurring reminder: {rule.Title}",
+                $"Review {rule.Title}. It is due on {scheduledDate:dd MMM yyyy} as a {rule.Frequency.ToString().ToLowerInvariant()} {rule.Type.ToString().ToLowerInvariant()} rule.",
                 route,
                 $"recurring-due:{rule.Id}:{scheduledDate:yyyyMMdd}"), cancellationToken);
 
@@ -127,10 +127,10 @@ public sealed class AutomationService(
                 goal.UserId,
                 NotificationType.GoalTargetApproaching,
                 NotificationLevel.Warning,
-                $"Goal target approaching: {goal.Name}",
+                $"Goal reminder: {goal.Name}",
                 remainingDays == 0
-                    ? $"{goal.Name} reaches its target date today. Review your progress and next contribution."
-                    : $"{goal.Name} reaches its target date in {remainingDays} day{(remainingDays == 1 ? string.Empty : "s")}.",
+                    ? $"{goal.Name} reaches its target date today. Check progress and decide whether another contribution is needed."
+                    : $"{goal.Name} reaches its target date in {remainingDays} day{(remainingDays == 1 ? string.Empty : "s")}. Review progress before the deadline.",
                 "/goals",
                 $"goal-target-approaching:{goal.Id}:{goal.TargetDateUtc:yyyyMMdd}"), cancellationToken);
 

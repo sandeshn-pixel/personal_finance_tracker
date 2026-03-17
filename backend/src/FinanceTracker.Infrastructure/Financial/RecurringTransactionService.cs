@@ -292,8 +292,8 @@ public sealed class RecurringTransactionService(
                 rule.UserId,
                 NotificationType.RecurringExecutionFailed,
                 NotificationLevel.Warning,
-                $"Recurring rule failed: {rule.Title}",
-                $"{rule.Title} could not create its scheduled transaction for {scheduledDate:dd MMM yyyy}. {execution.FailureReason}",
+                $"Recurring transaction needs attention: {rule.Title}",
+                $"{rule.Title} could not create its scheduled transaction for {scheduledDate:dd MMM yyyy}. Review the rule and fix the issue: {execution.FailureReason}",
                 "/recurring",
                 $"recurring-failed:{execution.Id}"), cancellationToken);
             return (false, false, false, true);

@@ -7,6 +7,7 @@ namespace FinanceTracker.Api.HostedServices;
 
 public sealed class FinanceAutomationHostedService(
     IServiceScopeFactory scopeFactory,
+    IAutomationStatusTracker statusTracker,
     IOptionsMonitor<AutomationOptions> optionsMonitor,
     ILogger<FinanceAutomationHostedService> logger) : BackgroundService
 {
@@ -19,11 +20,15 @@ public sealed class FinanceAutomationHostedService(
 
             if (options.EnableBackgroundProcessing)
             {
+                var startedUtc = DateTime.UtcNow;
+                statusTracker.RecordStarted(startedUtc);
+
                 try
                 {
                     using var scope = scopeFactory.CreateScope();
                     var automationService = scope.ServiceProvider.GetRequiredService<IAutomationService>();
-                    await automationService.RunAsync(DateTime.UtcNow, stoppingToken);
+                    var summary = await automationService.RunAsync(startedUtc, stoppingToken);
+                    statusTracker.RecordSucceeded(summary, DateTime.UtcNow);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -31,6 +36,7 @@ public sealed class FinanceAutomationHostedService(
                 }
                 catch (Exception ex)
                 {
+                    statusTracker.RecordFailed(DateTime.UtcNow, ex.Message);
                     logger.LogError(ex, "Automation cycle failed.");
                 }
             }

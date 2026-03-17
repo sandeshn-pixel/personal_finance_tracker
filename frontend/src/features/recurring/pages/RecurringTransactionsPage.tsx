@@ -4,6 +4,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
+import { automationApi, type AutomationStatusDto } from "../api/automationApi";
 import { categoriesApi, type CategoryDto } from "../../categories/api/categoriesApi";
 import { recurringTransactionsApi, type RecurringExecutionSummaryDto, type RecurringTransactionDto } from "../api/recurringTransactionsApi";
 import { Alert } from "../../../shared/components/Alert";
@@ -42,6 +43,7 @@ export function RecurringTransactionsPage() {
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [rules, setRules] = useState<RecurringTransactionDto[]>([]);
+  const [automationStatus, setAutomationStatus] = useState<AutomationStatusDto | null>(null);
   const [processingSummary, setProcessingSummary] = useState<RecurringExecutionSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -71,15 +73,17 @@ export function RecurringTransactionsPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [accountsResponse, categoriesResponse, rulesResponse] = await Promise.all([
+      const [accountsResponse, categoriesResponse, rulesResponse, automationResponse] = await Promise.all([
         accountsApi.list(accessToken),
         categoriesApi.list(accessToken),
         recurringTransactionsApi.list(accessToken),
+        automationApi.status(accessToken),
       ]);
       const liveAccounts = accountsResponse.filter((item) => !item.isArchived);
       setAccounts(liveAccounts);
       setCategories(categoriesResponse.filter((item) => !item.isArchived));
       setRules(rulesResponse);
+      setAutomationStatus(automationResponse);
       reset((current) => ({ ...current, accountId: current.accountId || liveAccounts[0]?.id || "" }));
       setErrorMessage(null);
     } catch (error) {
@@ -190,6 +194,7 @@ export function RecurringTransactionsPage() {
 
   const filteredCategories = useMemo(() => categories.filter((item) => selectedType === "1" ? item.type === "Income" : item.type === "Expense"), [categories, selectedType]);
   const activeCount = useMemo(() => rules.filter((rule) => rule.status === "Active").length, [rules]);
+  const automationOutcome = automationStatus?.lastRunSucceeded == null ? "Awaiting first background run" : automationStatus.lastRunSucceeded ? "Last run completed successfully" : "Last run needs attention";
 
   if (loading && rules.length === 0 && accounts.length === 0) {
     return <PageLoader label="Loading recurring transactions" />;
@@ -197,15 +202,32 @@ export function RecurringTransactionsPage() {
 
   return (
     <div className="page-stack">
-      <SectionHeader title="Recurring transactions" description="Define reusable rules, pause and resume schedules, and keep manual processing available as a fallback alongside the background scheduler." action={<Button type="button" onClick={processDueRules}>Run due now</Button>} />
+      <SectionHeader title="Recurring transactions" description="Define reusable rules, pause and resume schedules, and keep manual processing available alongside the background scheduler." action={<Button type="button" onClick={processDueRules}>Run due now</Button>} />
       {errorMessage ? <Alert message={errorMessage} /> : null}
-      {processingSummary ? <Alert message={`Processed ${processingSummary.occurrencesProcessed} occurrences and created ${processingSummary.transactionsCreated} transactions.`} /> : null}
+      {processingSummary ? <Alert message={`Processed ${processingSummary.occurrencesProcessed} occurrences and created ${processingSummary.transactionsCreated} transactions.`} variant="success" /> : null}
       <div className="stats-grid stats-grid--four">
         <StatCard label="Rules" value={String(rules.length)} hint={`${activeCount} active schedules.`} />
         <StatCard label="Auto-create" value={String(rules.filter((rule) => rule.autoCreateTransaction).length)} hint="Rules that will generate transactions when due." />
         <StatCard label="Paused" value={String(rules.filter((rule) => rule.status === "Paused").length)} hint="Paused rules keep their history and can be resumed." />
         <StatCard label="Due today" value={String(rules.filter((rule) => rule.nextRunDateUtc && new Date(rule.nextRunDateUtc) <= new Date()).length)} hint="Rules whose next run date is now due or past due." />
       </div>
+      {automationStatus ? (
+        <section className="panel-card recurring-automation-card">
+          <div className="panel-card__header panel-card__header--inline">
+            <div>
+              <h3>Automation status</h3>
+              <p>Background scheduler visibility for production-style recurring execution.</p>
+            </div>
+            <span className={`status-badge status-badge--${automationStatus.backgroundProcessingEnabled ? "default" : "warning"}`}>{automationStatus.backgroundProcessingEnabled ? "Enabled" : "Disabled"}</span>
+          </div>
+          <div className="stats-grid stats-grid--four recurring-automation-stats">
+            <StatCard label="Polling interval" value={`${automationStatus.pollingIntervalSeconds}s`} hint="Background check frequency." />
+            <StatCard label="Last started" value={automationStatus.lastStartedUtc ? formatDate(automationStatus.lastStartedUtc) : "Not yet"} hint={automationOutcome} />
+            <StatCard label="Last completed" value={automationStatus.lastCompletedUtc ? formatDate(automationStatus.lastCompletedUtc) : "Not yet"} hint={automationStatus.lastError ?? "No recorded automation errors."} tone={automationStatus.lastRunSucceeded === false ? "negative" : "positive"} />
+            <StatCard label="Transactions created" value={String(automationStatus.lastSummary?.transactionsCreated ?? 0)} hint={`${automationStatus.lastSummary?.manualRemindersCreated ?? 0} reminders and ${automationStatus.lastSummary?.goalRemindersCreated ?? 0} goal reminders in the last completed cycle.`} />
+          </div>
+        </section>
+      ) : null}
       <div className="budget-layout">
         <section className="panel-card panel-card--form">
           <div className="panel-card__header">
@@ -276,7 +298,7 @@ export function RecurringTransactionsPage() {
                   <div className="budget-card__header">
                     <div>
                       <strong>{rule.title}</strong>
-                      <p>{rule.accountName}{rule.transferAccountName ? ` -> ${rule.transferAccountName}` : ""} • {rule.categoryName ?? rule.type}</p>
+                      <p>{rule.accountName}{rule.transferAccountName ? ` -> ${rule.transferAccountName}` : ""} | {rule.categoryName ?? rule.type}</p>
                     </div>
                     <div className="budget-card__aside">
                       <span className={`status-badge status-badge--${rule.status === "Active" ? "default" : rule.status === "Paused" ? "warning" : "danger"}`}>{rule.status}</span>
