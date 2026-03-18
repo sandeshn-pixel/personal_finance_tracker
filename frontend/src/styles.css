@@ -527,6 +527,10 @@ a:focus-visible {
   justify-content: space-between;
   gap: 1rem;
 }
+.chart-row__value{
+  display: flex;
+  gap: 1rem;
+}
 .chart-bar {
   width: 100%;
   height: 0.5rem;
@@ -539,61 +543,73 @@ a:focus-visible {
   border-radius: inherit;
   background: #0b9da4;
 }
-.lollipop-chart {
+.spending-bars {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
-.lollipop-chart__row {
+.spending-bars__row {
   display: grid;
   grid-template-columns: minmax(8rem, 10rem) minmax(0, 1fr) max-content;
   gap: 0.9rem;
   align-items: center;
 }
 
-.lollipop-chart__label-group {
+.spending-bars__label-group {
   display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
 }
 
-.lollipop-chart__label-group small {
-  color: var(--color-text-muted);
+.spending-bars__label-group strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.lollipop-chart__line-wrap {
-  position: relative;
-  height: 1rem;
-}
-
-.lollipop-chart__line {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 0.18rem;
+.spending-bars__swatch {
+  width: 0.75rem;
+  height: 0.75rem;
   border-radius: 999px;
-  background: rgba(57, 62, 70, 0.14);
-  transform: translateY(-50%);
+  flex-shrink: 0;
 }
 
-.lollipop-chart__dot {
-  position: absolute;
-  top: 50%;
-  width: 0.92rem;
-  height: 0.92rem;
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.82);
-}
-
-.lollipop-chart__dot--other {
+.spending-bars__swatch--other {
   background: #9AA6B2;
 }
 
-.lollipop-chart__value {
-  white-space: nowrap;
+.spending-bars__bar-wrap {
+  min-width: 0;
+}
+
+.spending-bars__bar-track {
+  width: 100%;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: rgba(57, 62, 70, 0.08);
+  overflow: hidden;
+}
+
+.spending-bars__bar-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.spending-bars__bar-fill--other {
+  background: #9AA6B2;
+}
+
+.spending-bars__value-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.12rem;
+}
+
+.spending-bars__value-group small {
+  color: var(--color-text-muted);
 }
 
 @keyframes pulse {
@@ -652,6 +668,10 @@ a:focus-visible {
 .trend-row__label {
   display: flex;
   justify-content: space-between;
+  gap: 1rem;
+}
+.health-tile{
+  display: flex;
   gap: 1rem;
 }
 .budget-card__aside {
@@ -1621,12 +1641,8 @@ a:focus-visible {
   border-color: rgba(69, 85, 101, 0.4);
 }
 
-:root[data-theme="dark"] .lollipop-chart__line {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-:root[data-theme="dark"] .lollipop-chart__dot {
-  box-shadow: 0 0 0 3px rgba(23, 32, 41, 0.92);
+:root[data-theme="dark"] .spending-bars__bar-track {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme="dark"] .stat-card--positive strong {

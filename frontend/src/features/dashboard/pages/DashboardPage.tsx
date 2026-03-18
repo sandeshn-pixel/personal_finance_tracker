@@ -206,36 +206,44 @@ export function DashboardPage() {
             {summary.spendingByCategory.length === 0 ? (
               <EmptyState title="No expense activity" description="The chart appears once expense transactions are recorded." />
             ) : (
-              <div className="lollipop-chart">
+              <div className="spending-bars">
                 {topSpendingCategories.map((item, index) => {
                   const share = currentMonthExpense > 0 ? (item.amount / currentMonthExpense) * 100 : 0;
                   const color = spendingPalette[index % spendingPalette.length];
 
                   return (
-                    <div key={item.categoryId} className="lollipop-chart__row">
-                      <div className="lollipop-chart__label-group">
+                    <div key={item.categoryId} className="spending-bars__row">
+                      <div className="spending-bars__label-group">
+                        <span className="spending-bars__swatch" style={{ background: color }} />
                         <strong>{item.categoryName}</strong>
+                      </div>
+                      <div className="spending-bars__bar-wrap">
+                        <div className="spending-bars__bar-track">
+                          <div className="spending-bars__bar-fill" style={{ width: `${(item.amount / (maxSpend || 1)) * 100}%`, background: color }} />
+                        </div>
+                      </div>
+                      <div className="spending-bars__value-group">
+                        <strong>{formatCurrency(item.amount)}</strong>
                         <small>{share.toFixed(1)}%</small>
                       </div>
-                      <div className="lollipop-chart__line-wrap">
-                        <div className="lollipop-chart__line" />
-                        <span className="lollipop-chart__dot" style={{ left: `${Math.max(share, 8)}%`, background: color }} />
-                      </div>
-                      <strong className="lollipop-chart__value">{formatCurrency(item.amount)}</strong>
                     </div>
                   );
                 })}
                 {remainingSpendingAmount > 0 ? (
-                  <div className="lollipop-chart__row lollipop-chart__row--other">
-                    <div className="lollipop-chart__label-group">
+                  <div className="spending-bars__row spending-bars__row--other">
+                    <div className="spending-bars__label-group">
+                      <span className="spending-bars__swatch spending-bars__swatch--other" />
                       <strong>Other</strong>
+                    </div>
+                    <div className="spending-bars__bar-wrap">
+                      <div className="spending-bars__bar-track">
+                        <div className="spending-bars__bar-fill spending-bars__bar-fill--other" style={{ width: `${(remainingSpendingAmount / (maxSpend || 1)) * 100}%` }} />
+                      </div>
+                    </div>
+                    <div className="spending-bars__value-group">
+                      <strong>{formatCurrency(remainingSpendingAmount)}</strong>
                       <small>{((remainingSpendingAmount / currentMonthExpense) * 100).toFixed(1)}%</small>
                     </div>
-                    <div className="lollipop-chart__line-wrap">
-                      <div className="lollipop-chart__line" />
-                      <span className="lollipop-chart__dot lollipop-chart__dot--other" style={{ left: `${Math.max((remainingSpendingAmount / currentMonthExpense) * 100, 8)}%` }} />
-                    </div>
-                    <strong className="lollipop-chart__value">{formatCurrency(remainingSpendingAmount)}</strong>
                   </div>
                 ) : null}
               </div>
@@ -270,7 +278,37 @@ export function DashboardPage() {
               </div>
             )}
           </section>
-
+            <section className="panel-card panel-card--compact dashboard-flow__item">
+            <div className="panel-card__header">
+              <h3>Budget health</h3>
+              <p>Current month budget performance across planned expense categories.</p>
+            </div>
+            {summary.budgetHealth.totalBudgeted === 0 ? (
+              <EmptyState title="No budgets configured" description="Create monthly budgets to track how actual expense activity compares with plan." />
+            ) : (
+              <div className="budget-health-card">
+                <div className="budget-health-card__summary">
+                  <strong>{formatCurrency(summary.budgetHealth.totalSpent)} spent of {formatCurrency(summary.budgetHealth.totalBudgeted)}</strong>
+                  <span>{budgetUsage.toFixed(2)}% used</span>
+                </div>
+                <ProgressBar value={budgetUsage} tone={summary.budgetHealth.overBudgetCount > 0 ? "danger" : summary.budgetHealth.thresholdReachedCount > 0 ? "warning" : "default"} />
+                <div className="health-tile-grid">
+                  <div className="health-tile">
+                    <strong>{formatCurrency(summary.budgetHealth.totalRemaining)}</strong>
+                    <span>Remaining</span>
+                  </div>
+                  <div className="health-tile">
+                    <strong>{summary.budgetHealth.thresholdReachedCount}</strong>
+                    <span>Warnings</span>
+                  </div>
+                  <div className="health-tile">
+                    <strong>{summary.budgetHealth.overBudgetCount}</strong>
+                    <span>Over budget</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
           <section className="panel-card panel-card--medium dashboard-flow__item">
             <div className="panel-card__header">
               <h3>Budget usage</h3>
@@ -338,7 +376,7 @@ export function DashboardPage() {
           <section className="panel-card panel-card--compact dashboard-flow__item">
             <div className="panel-card__header">
               <h3>Goal progress</h3>
-              <p>Most relevant active and completed goals.</p>
+              <p>Active and completed goals.</p>
             </div>
             {summary.goalProgress.length === 0 ? (
               <EmptyState title="No goals yet" description="Create savings goals to track progress against your targets." />
@@ -368,37 +406,7 @@ export function DashboardPage() {
             )}
           </section>
 
-          <section className="panel-card panel-card--compact dashboard-flow__item">
-            <div className="panel-card__header">
-              <h3>Budget health</h3>
-              <p>Current month budget performance across planned expense categories.</p>
-            </div>
-            {summary.budgetHealth.totalBudgeted === 0 ? (
-              <EmptyState title="No budgets configured" description="Create monthly budgets to track how actual expense activity compares with plan." />
-            ) : (
-              <div className="budget-health-card">
-                <div className="budget-health-card__summary">
-                  <strong>{formatCurrency(summary.budgetHealth.totalSpent)} spent of {formatCurrency(summary.budgetHealth.totalBudgeted)}</strong>
-                  <span>{budgetUsage.toFixed(2)}% used</span>
-                </div>
-                <ProgressBar value={budgetUsage} tone={summary.budgetHealth.overBudgetCount > 0 ? "danger" : summary.budgetHealth.thresholdReachedCount > 0 ? "warning" : "default"} />
-                <div className="health-tile-grid">
-                  <div className="health-tile">
-                    <strong>{formatCurrency(summary.budgetHealth.totalRemaining)}</strong>
-                    <span>Remaining</span>
-                  </div>
-                  <div className="health-tile">
-                    <strong>{summary.budgetHealth.thresholdReachedCount}</strong>
-                    <span>Warnings</span>
-                  </div>
-                  <div className="health-tile">
-                    <strong>{summary.budgetHealth.overBudgetCount}</strong>
-                    <span>Over budget</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
+          
         </div>
       </section>
         </>

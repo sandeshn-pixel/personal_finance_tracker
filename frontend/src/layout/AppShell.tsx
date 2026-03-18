@@ -154,7 +154,7 @@ export function AppShell() {
         </nav>
         <div className="sidebar-spacer" />
         <button type="button" className="ghost-button sidebar-logout-button" onClick={handleLogout} aria-label="Log out">Logout</button>
-        <div className="sidebar-footnote">Accounts, transactions, budgets, goals, recurring automation, and reminders are active.</div>
+       
       </aside>
       <div className="shell-main">
         <header className="topbar">

@@ -19,9 +19,16 @@ export function AuthCard({
         <p className="eyebrow">Personal Finance Tracker</p>
         <h1>{title}</h1>
         <p className="auth-copy">{subtitle}</p>
-        <div className="auth-note">
-          Built with a security-first session model, explicit validation, and a shell ready for the next financial modules.
-        </div>
+        <h3>Manage Your Personal Finances</h3>
+        <img 
+          src="/public/Personal_finance.png"  
+          alt="Personal Finance Tracker Illustration"  
+          className="hero-image" 
+          style={{  width: '630px', height: 'auto' }} 
+        />
+        <p> 
+          Track expenses, set budgets, and achieve your financial goals
+        </p>
       </section>
 
       <section className="auth-panel auth-panel--form">
