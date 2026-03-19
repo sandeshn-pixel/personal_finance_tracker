@@ -47,6 +47,19 @@ public sealed class ExportsController(
         return File(export.Content, export.ContentType, export.FileName);
     }
 
+    [HttpGet("reports/overview.pdf")]
+    public async Task<IActionResult> ExportReportsOverviewPdf([FromQuery] ReportQuery query, CancellationToken cancellationToken)
+    {
+        var validation = await reportQueryValidator.ValidateAsync(query, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return BuildValidationProblem(validation);
+        }
+
+        var export = await exportService.ExportReportOverviewPdfAsync(GetUserId(), query, cancellationToken);
+        return File(export.Content, export.ContentType, export.FileName);
+    }
+
     [HttpGet("budgets/month.csv")]
     public async Task<IActionResult> ExportBudgetMonth([FromQuery] BudgetMonthQuery query, CancellationToken cancellationToken)
     {

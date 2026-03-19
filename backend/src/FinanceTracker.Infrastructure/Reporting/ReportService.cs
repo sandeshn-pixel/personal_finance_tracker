@@ -14,6 +14,8 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
     {
         var start = DateTime.SpecifyKind(query.StartDateUtc.Date, DateTimeKind.Utc);
         var endExclusive = DateTime.SpecifyKind(query.EndDateUtc.Date.AddDays(1), DateTimeKind.Utc);
+        var periodLength = endExclusive - start;
+        var previousStart = start - periodLength;
 
         var selectedAccounts = await LoadSelectedAccountsAsync(userId, query.AccountId, cancellationToken);
         var selectedAccountIds = selectedAccounts.Select(x => x.Id).ToHashSet();
@@ -25,21 +27,29 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
             .Include(x => x.Category)
             .ToListAsync(cancellationToken);
 
-        var totalIncome = reportTransactions.Where(x => x.Type == TransactionType.Income).Sum(x => x.Amount);
-        var totalExpense = reportTransactions.Where(x => x.Type == TransactionType.Expense).Sum(x => x.Amount);
+        var previousTransactions = await dbContext.Transactions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && !x.IsDeleted && x.DateUtc >= previousStart && x.DateUtc < start)
+            .Where(x => !query.AccountId.HasValue || x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value)
+            .ToListAsync(cancellationToken);
 
-        var summary = new ReportSummaryDto(
-            totalIncome,
-            totalExpense,
-            totalIncome - totalExpense,
-            reportTransactions.Count(x => x.Type == TransactionType.Expense),
-            reportTransactions.Count(x => x.Type == TransactionType.Income));
+        var summary = BuildSummary(reportTransactions);
+        var comparison = BuildComparison(previousTransactions);
 
         var categorySpend = reportTransactions
             .Where(x => x.Type == TransactionType.Expense && x.CategoryId.HasValue && x.Category is not null)
             .GroupBy(x => new { x.CategoryId, x.Category!.Name })
             .Select(g => new CategorySpendReportItemDto(g.Key.CategoryId!.Value, g.Key.Name, g.Sum(x => x.Amount)))
             .OrderByDescending(x => x.Amount)
+            .ToList();
+
+        var topMerchants = reportTransactions
+            .Where(x => x.Type == TransactionType.Expense && !string.IsNullOrWhiteSpace(x.Merchant))
+            .GroupBy(x => x.Merchant!.Trim())
+            .Select(g => new MerchantSpendReportItemDto(g.Key, g.Sum(x => x.Amount), g.Count()))
+            .OrderByDescending(x => x.Amount)
+            .ThenBy(x => x.MerchantName)
+            .Take(5)
             .ToList();
 
         var bucketMode = ResolveBucketMode(start, endExclusive);
@@ -78,7 +88,35 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
             accountBalanceTrend.Add(new AccountBalanceTrendPointDto(bucket, FormatBucket(bucket, bucketMode), runningBalance));
         }
 
-        return new ReportsOverviewDto(summary, categorySpend, incomeExpenseTrend, accountBalanceTrend);
+        return new ReportsOverviewDto(summary, comparison, categorySpend, topMerchants, incomeExpenseTrend, accountBalanceTrend);
+    }
+
+    private static ReportSummaryDto BuildSummary(IEnumerable<Transaction> transactions)
+    {
+        var source = transactions.ToList();
+        var totalIncome = source.Where(x => x.Type == TransactionType.Income).Sum(x => x.Amount);
+        var totalExpense = source.Where(x => x.Type == TransactionType.Expense).Sum(x => x.Amount);
+
+        return new ReportSummaryDto(
+            totalIncome,
+            totalExpense,
+            totalIncome - totalExpense,
+            source.Count(x => x.Type == TransactionType.Expense),
+            source.Count(x => x.Type == TransactionType.Income));
+    }
+
+    private static ReportPeriodComparisonDto BuildComparison(IEnumerable<Transaction> previousTransactions)
+    {
+        var source = previousTransactions.ToList();
+        var previousTotalIncome = source.Where(x => x.Type == TransactionType.Income).Sum(x => x.Amount);
+        var previousTotalExpense = source.Where(x => x.Type == TransactionType.Expense).Sum(x => x.Amount);
+
+        return new ReportPeriodComparisonDto(
+            previousTotalIncome,
+            previousTotalExpense,
+            previousTotalIncome - previousTotalExpense,
+            source.Count(x => x.Type == TransactionType.Expense),
+            source.Count(x => x.Type == TransactionType.Income));
     }
 
     private async Task<List<Account>> LoadSelectedAccountsAsync(Guid userId, Guid? accountId, CancellationToken cancellationToken)

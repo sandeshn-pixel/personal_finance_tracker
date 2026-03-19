@@ -9,5 +9,6 @@ public interface IExportService
 {
     Task<ExportFileDto> ExportTransactionsCsvAsync(Guid userId, TransactionListQuery query, CancellationToken cancellationToken);
     Task<ExportFileDto> ExportReportOverviewCsvAsync(Guid userId, ReportQuery query, CancellationToken cancellationToken);
+    Task<ExportFileDto> ExportReportOverviewPdfAsync(Guid userId, ReportQuery query, CancellationToken cancellationToken);
     Task<ExportFileDto> ExportBudgetSummaryCsvAsync(Guid userId, BudgetMonthQuery query, CancellationToken cancellationToken);
 }

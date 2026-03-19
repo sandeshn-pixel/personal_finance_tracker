@@ -1,4 +1,4 @@
-﻿import { apiClient, downloadFile } from "../../../shared/lib/api/client";
+import { apiClient, downloadFile } from "../../../shared/lib/api/client";
 
 export type ReportSummaryDto = {
   totalIncome: number;
@@ -8,10 +8,24 @@ export type ReportSummaryDto = {
   incomeTransactionCount: number;
 };
 
+export type ReportPeriodComparisonDto = {
+  previousTotalIncome: number;
+  previousTotalExpense: number;
+  previousNetCashFlow: number;
+  previousExpenseTransactionCount: number;
+  previousIncomeTransactionCount: number;
+};
+
 export type CategorySpendReportItemDto = {
   categoryId: string;
   categoryName: string;
   amount: number;
+};
+
+export type MerchantSpendReportItemDto = {
+  merchantName: string;
+  amount: number;
+  transactionCount: number;
 };
 
 export type IncomeExpenseTrendPointDto = {
@@ -29,7 +43,9 @@ export type AccountBalanceTrendPointDto = {
 
 export type ReportsOverviewDto = {
   summary: ReportSummaryDto;
+  comparison: ReportPeriodComparisonDto;
   categorySpend: CategorySpendReportItemDto[];
+  topMerchants: MerchantSpendReportItemDto[];
   incomeExpenseTrend: IncomeExpenseTrendPointDto[];
   accountBalanceTrend: AccountBalanceTrendPointDto[];
 };
@@ -53,4 +69,5 @@ export function toQueryString(query: ReportsQuery) {
 export const reportsApi = {
   overview: (accessToken: string, query: ReportsQuery) => apiClient<ReportsOverviewDto>(`/reports/overview?${toQueryString(query)}`, { accessToken }),
   exportOverviewCsv: (accessToken: string, query: ReportsQuery) => downloadFile(`/exports/reports/overview.csv?${toQueryString(query)}`, "reports-overview.csv", { accessToken }),
+  exportOverviewPdf: (accessToken: string, query: ReportsQuery) => downloadFile(`/exports/reports/overview.pdf?${toQueryString(query)}`, "reports-overview.pdf", { accessToken }),
 };

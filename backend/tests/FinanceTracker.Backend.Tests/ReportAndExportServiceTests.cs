@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using FinanceTracker.Application.Budgets.DTOs;
 using FinanceTracker.Application.Reports.DTOs;
 using FinanceTracker.Application.Transactions.DTOs;
@@ -33,6 +33,66 @@ public sealed class ReportAndExportServiceTests
         Assert.Equal(2000m, overview.Summary.TotalIncome);
         Assert.Equal(250m, overview.Summary.TotalExpense);
         Assert.Single(overview.CategorySpend);
+    }
+
+    [Fact]
+    public async Task ReportsOverview_IncludesPreviousPeriodComparisonAndTopMerchants()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var user = TestData.AddUser(dbContext);
+        var checking = TestData.AddAccount(dbContext, user.Id, "Checking", 500m);
+        var salaryCategory = TestData.AddCategory(dbContext, user.Id, "Salary", CategoryType.Income);
+        var foodCategory = TestData.AddCategory(dbContext, user.Id, "Food", CategoryType.Expense);
+        var rentCategory = TestData.AddCategory(dbContext, user.Id, "Rent", CategoryType.Expense);
+
+        dbContext.Transactions.AddRange(
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Income, Amount = 1500m, DateUtc = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc), CategoryId = salaryCategory.Id, Merchant = "Employer" },
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 600m, DateUtc = new DateTime(2026, 2, 12, 0, 0, 0, DateTimeKind.Utc), CategoryId = rentCategory.Id, Merchant = "Landlord" },
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Income, Amount = 2000m, DateUtc = new DateTime(2026, 3, 10, 0, 0, 0, DateTimeKind.Utc), CategoryId = salaryCategory.Id, Merchant = "Employer" },
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 850m, DateUtc = new DateTime(2026, 3, 12, 0, 0, 0, DateTimeKind.Utc), CategoryId = rentCategory.Id, Merchant = "Landlord" },
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 300m, DateUtc = new DateTime(2026, 3, 15, 0, 0, 0, DateTimeKind.Utc), CategoryId = foodCategory.Id, Merchant = "Fresh Mart" },
+            new FinanceTracker.Domain.Entities.Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 120m, DateUtc = new DateTime(2026, 3, 20, 0, 0, 0, DateTimeKind.Utc), CategoryId = foodCategory.Id, Merchant = "Fresh Mart" });
+        await dbContext.SaveChangesAsync();
+
+        var service = new ReportService(dbContext);
+        var overview = await service.GetOverviewAsync(user.Id, new ReportQuery(new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 31, 0, 0, 0, DateTimeKind.Utc), null), CancellationToken.None);
+
+        Assert.Equal(1500m, overview.Comparison.PreviousTotalIncome);
+        Assert.Equal(600m, overview.Comparison.PreviousTotalExpense);
+        Assert.Equal(900m, overview.Comparison.PreviousNetCashFlow);
+        Assert.Equal("Landlord", overview.TopMerchants.First().MerchantName);
+        Assert.Equal(850m, overview.TopMerchants.First().Amount);
+        Assert.Equal(2, overview.TopMerchants.Count);
+    }
+
+    [Fact]
+    public async Task ReportOverviewPdfExport_ReturnsPdfBytes()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var user = TestData.AddUser(dbContext);
+        var account = TestData.AddAccount(dbContext, user.Id, "Checking", 1000m);
+        var incomeCategory = TestData.AddCategory(dbContext, user.Id, "Salary", CategoryType.Income);
+        dbContext.Transactions.Add(new FinanceTracker.Domain.Entities.Transaction
+        {
+            UserId = user.Id,
+            AccountId = account.Id,
+            Type = TransactionType.Income,
+            Amount = 5000m,
+            DateUtc = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
+            CategoryId = incomeCategory.Id,
+            Merchant = "Employer"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var exportService = new ExportService(dbContext, new ReportService(dbContext), new BudgetService(dbContext));
+        var file = await exportService.ExportReportOverviewPdfAsync(user.Id, new ReportQuery(new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 3, 31, 0, 0, 0, DateTimeKind.Utc), null), CancellationToken.None);
+        var header = Encoding.ASCII.GetString(file.Content.Take(8).ToArray());
+
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.EndsWith(".pdf", file.FileName, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith("%PDF-1.", header, StringComparison.Ordinal);
     }
 
     [Fact]
