@@ -21,7 +21,7 @@ export function AuthCard({
         <p className="auth-copy">{subtitle}</p>
         <h3>Manage Your Personal Finances</h3>
         <img 
-          src="/public/Personal_finance.png"  
+          src="/Personal_finance.png"  
           alt="Personal Finance Tracker Illustration"  
           className="hero-image" 
           style={{  width: '630px', height: 'auto' }} 
