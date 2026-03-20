@@ -12,8 +12,10 @@ using FinanceTracker.Application.Auth.Interfaces;
 using FinanceTracker.Infrastructure;
 using FinanceTracker.Infrastructure.Automation;
 using FinanceTracker.Infrastructure.Auth;
+using FinanceTracker.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 
@@ -192,6 +194,12 @@ builder.Services.AddAuthorization();
 builder.Services.AddHostedService<FinanceAutomationHostedService>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    dbContext.Database.Migrate();
+}
 
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();
