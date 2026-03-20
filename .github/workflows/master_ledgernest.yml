@@ -44,6 +44,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: .net-app
+          path: ./published-app
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -51,5 +52,5 @@ jobs:
         with:
           app-name: 'ledgerNest'
           slot-name: 'Production'
-          package: .
+          package: ./published-app
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_05457C2766084CB5A867F76C20DC3D92 }}
