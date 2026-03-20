@@ -220,7 +220,7 @@ public sealed class AuthController(
     }
 
     private SameSiteMode GetRefreshCookieSameSite()
-        => _environment.IsDevelopment() ? SameSiteMode.None : SameSiteMode.Strict;
+        => SameSiteMode.None;
 
     private IActionResult BuildValidationProblem(FluentValidation.Results.ValidationResult validationResult)
     {
