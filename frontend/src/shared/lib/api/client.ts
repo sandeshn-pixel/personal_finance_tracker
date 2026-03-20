@@ -1,4 +1,11 @@
-﻿const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://localhost:7054/api";
+const DEFAULT_DEV_API_BASE_URL = "https://localhost:7054/api";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  ?? (import.meta.env.DEV ? DEFAULT_DEV_API_BASE_URL : "");
+
+if (!API_BASE_URL) {
+  throw new Error("VITE_API_BASE_URL must be configured for production builds.");
+}
 
 type ApiErrorPayload = {
   detail?: string;
