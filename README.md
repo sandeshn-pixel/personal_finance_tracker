@@ -13,6 +13,8 @@ Production-style personal finance tracker built with:
 - PostgreSQL
 - Podman and `podman compose` for containerized runs
 
+The repository is pinned to the .NET 8 SDK with [global.json](/d:/Sandesh/Projects/Personal_Fincance_Tracker/global.json) so local CLI commands use the same toolchain consistently.
+
 ## Environment Setup
 
 Backend config lives in:
@@ -98,6 +100,16 @@ npm run dev
 Typical local URLs:
 - frontend: `http://localhost:5173`
 - backend: `https://localhost:7054` or `http://localhost:5147`
+
+## Seed Local Sample Data
+
+After registering at least one local user, you can seed realistic sample accounts, transactions, budgets, goals, and recurring rules:
+
+```powershell
+dotnet run --project backend/tools/SeedSampleData/SeedSampleData.csproj
+```
+
+The seed data is idempotent for the same user and is intended to light up dashboard, forecast, and health-score views with meaningful local data.
 
 ## Deploy With Podman
 

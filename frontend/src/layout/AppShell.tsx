@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/providers/AuthProvider";
 import { notificationsApi, type NotificationDto, type NotificationFeedDto } from "../features/notifications/api/notificationsApi";
@@ -12,6 +12,8 @@ const navigationItems = [
   { to: "/categories", label: "Categories" },
   { to: "/budgets", label: "Budgets" },
   { to: "/goals", label: "Goals" },
+  { to: "/insights/health-score", label: "Insights" },
+  { to: "/rules", label: "Rules" },
   { to: "/reports", label: "Reports" },
   { to: "/recurring", label: "Recurring" },
   { to: "/notifications", label: "Notifications" },
@@ -154,7 +156,6 @@ export function AppShell() {
         </nav>
         <div className="sidebar-spacer" />
         <button type="button" className="ghost-button sidebar-logout-button" onClick={handleLogout} aria-label="Log out">Logout</button>
-       
       </aside>
       <div className="shell-main">
         <header className="topbar">
@@ -201,7 +202,7 @@ export function AppShell() {
                 </div>
               ) : null}
             </div>
-            <button type="button" className="user-badge user-badge--avatar-only user-badge-button" aria-label="Open settings" onClick={() => navigate("/settings") }>
+            <button type="button" className="user-badge user-badge--avatar-only user-badge-button" aria-label="Open settings" onClick={() => navigate("/settings")}>
               <span className="user-badge__avatar" aria-hidden="true">{initials}</span>
             </button>
           </div>
@@ -211,7 +212,3 @@ export function AppShell() {
     </div>
   );
 }
-
-
-
-

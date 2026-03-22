@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+﻿import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AccountDetailsPage } from "../../features/accounts/pages/AccountDetailsPage";
 import { AccountsPage } from "../../features/accounts/pages/AccountsPage";
 import { AuthGuard } from "../../features/auth/components/AuthGuard";
@@ -10,9 +10,11 @@ import { BudgetsPage } from "../../features/budgets/pages/BudgetsPage";
 import { CategoriesPage } from "../../features/categories/pages/CategoriesPage";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { GoalsPage } from "../../features/goals/pages/GoalsPage";
+import { HealthScorePage } from "../../features/insights/pages/HealthScorePage";
 import { NotificationsPage } from "../../features/notifications/pages/NotificationsPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { RecurringTransactionsPage } from "../../features/recurring/pages/RecurringTransactionsPage";
+import { RulesPage } from "../../features/rules/pages/RulesPage";
 import { SettingsPage } from "../../features/settings/pages/SettingsPage";
 import { TransactionsPage } from "../../features/transactions/pages/TransactionsPage";
 import { AppShell } from "../../layout/AppShell";
@@ -36,6 +38,8 @@ export const router = createBrowserRouter([
           { path: "/categories", element: <CategoriesPage /> },
           { path: "/budgets", element: <BudgetsPage /> },
           { path: "/goals", element: <GoalsPage /> },
+          { path: "/insights/health-score", element: <HealthScorePage /> },
+          { path: "/rules", element: <RulesPage /> },
           { path: "/reports", element: <ReportsPage /> },
           { path: "/recurring", element: <RecurringTransactionsPage /> },
           { path: "/notifications", element: <NotificationsPage /> },

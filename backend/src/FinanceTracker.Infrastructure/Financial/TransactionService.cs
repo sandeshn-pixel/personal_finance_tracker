@@ -1,5 +1,6 @@
 using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Categories.Interfaces;
+using FinanceTracker.Application.Rules.Interfaces;
 using FinanceTracker.Application.Transactions.DTOs;
 using FinanceTracker.Application.Transactions.Interfaces;
 using FinanceTracker.Domain.Entities;
@@ -9,7 +10,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Financial;
 
-public sealed class TransactionService(ApplicationDbContext dbContext, ICategorySeeder categorySeeder) : ITransactionService
+public sealed class TransactionService(
+    ApplicationDbContext dbContext,
+    ICategorySeeder categorySeeder,
+    ITransactionRuleEvaluator? transactionRuleEvaluator = null) : ITransactionService
 {
     public async Task<PagedResult<TransactionDto>> ListAsync(Guid userId, TransactionListQuery query, CancellationToken cancellationToken)
     {
@@ -52,28 +56,38 @@ public sealed class TransactionService(ApplicationDbContext dbContext, ICategory
         await categorySeeder.EnsureDefaultsAsync(userId, cancellationToken);
         await using var dbTransaction = await TransactionMapping.BeginFinancialTransactionAsync(dbContext, cancellationToken);
 
-        var resolved = await ResolveReferencesAsync(userId, request, cancellationToken);
+        var evaluated = transactionRuleEvaluator is null
+            ? new RuleEvaluationResult(request, [], [])
+            : await transactionRuleEvaluator.EvaluateAsync(userId, request, cancellationToken);
+
+        var resolved = await ResolveReferencesAsync(userId, evaluated.Request, cancellationToken);
 
         var transaction = new Transaction
         {
             UserId = userId,
             AccountId = resolved.SourceAccount.Id,
             TransferAccountId = resolved.TransferAccount?.Id,
-            Type = request.Type,
-            Amount = decimal.Round(request.Amount, 2, MidpointRounding.AwayFromZero),
-            DateUtc = DateTime.SpecifyKind(request.DateUtc, DateTimeKind.Utc),
+            Type = evaluated.Request.Type,
+            Amount = decimal.Round(evaluated.Request.Amount, 2, MidpointRounding.AwayFromZero),
+            DateUtc = DateTime.SpecifyKind(evaluated.Request.DateUtc, DateTimeKind.Utc),
             CategoryId = resolved.Category?.Id,
-            Note = request.Note?.Trim(),
-            Merchant = request.Merchant?.Trim(),
-            PaymentMethod = request.PaymentMethod?.Trim(),
-            RecurringTransactionId = request.RecurringTransactionId
+            Note = evaluated.Request.Note?.Trim(),
+            Merchant = evaluated.Request.Merchant?.Trim(),
+            PaymentMethod = evaluated.Request.PaymentMethod?.Trim(),
+            RecurringTransactionId = evaluated.Request.RecurringTransactionId
         };
 
         TransactionMapping.ApplyImpact(transaction.Type, transaction.Amount, resolved.SourceAccount, resolved.TransferAccount);
-        transaction.Tags = TransactionMapping.NormalizeTags(request.Tags).Select(x => new TransactionTag { Value = x }).ToList();
+        transaction.Tags = TransactionMapping.NormalizeTags(evaluated.Request.Tags).Select(x => new TransactionTag { Value = x }).ToList();
 
         dbContext.Transactions.Add(transaction);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transactionRuleEvaluator is not null && evaluated.Alerts.Count > 0)
+        {
+            await transactionRuleEvaluator.PublishAlertsAsync(userId, transaction.Id, evaluated.Alerts, cancellationToken);
+        }
+
         await dbTransaction.CommitAsync(cancellationToken);
 
         return await GetAsync(userId, transaction.Id, cancellationToken) ?? throw new NotFoundException("Transaction was not found after creation.");

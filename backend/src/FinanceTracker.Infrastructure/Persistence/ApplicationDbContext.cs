@@ -18,6 +18,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<RecurringTransactionRule> RecurringTransactionRules => Set<RecurringTransactionRule>();
     public DbSet<RecurringTransactionExecution> RecurringTransactionExecutions => Set<RecurringTransactionExecution>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
+    public DbSet<TransactionRule> TransactionRules => Set<TransactionRule>();
     public DbSet<UserSettings> UserSettings => Set<UserSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

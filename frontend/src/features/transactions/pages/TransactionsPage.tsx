@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -194,6 +194,7 @@ export function TransactionsPage() {
         }
       />
       {errorMessage ? <Alert message={errorMessage} /> : null}
+      {/* <Alert message="Active rules are applied only when you create a new transaction. Editing an existing transaction will not re-run rules in this version." /> */}
       {exportMessage ? <p className="form-status" role="status" aria-live="polite">{exportMessage}</p> : null}
       <div className="transactions-layout">
         <section className="panel-card panel-card--form">
@@ -330,3 +331,6 @@ export function TransactionsPage() {
     </div>
   );
 }
+
+
+

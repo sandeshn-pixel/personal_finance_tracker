@@ -1,4 +1,4 @@
-using FinanceTracker.Application.Accounts.DTOs;
+﻿using FinanceTracker.Application.Accounts.DTOs;
 using FinanceTracker.Application.Budgets.DTOs;
 using FinanceTracker.Application.Goals.DTOs;
 using FinanceTracker.Application.RecurringTransactions.DTOs;
@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 var cancellationToken = CancellationToken.None;
 var rootPath = ResolveRootPath();
 var connectionString = LoadConnectionString(rootPath);
+var today = DateTime.UtcNow.Date;
 
 var options = new DbContextOptionsBuilder<ApplicationDbContext>()
     .UseNpgsql(connectionString)
@@ -25,7 +26,11 @@ var accountService = new AccountService(dbContext);
 var transactionService = new TransactionService(dbContext, categorySeeder);
 var budgetService = new BudgetService(dbContext);
 var goalService = new GoalService(dbContext, notificationService);
-var recurringService = new RecurringTransactionService(dbContext, transactionService, notificationService, Microsoft.Extensions.Options.Options.Create(new FinanceTracker.Infrastructure.Automation.AutomationOptions()));
+var recurringService = new RecurringTransactionService(
+    dbContext,
+    transactionService,
+    notificationService,
+    Microsoft.Extensions.Options.Options.Create(new FinanceTracker.Infrastructure.Automation.AutomationOptions()));
 
 var users = await dbContext.Users
     .AsNoTracking()
@@ -88,14 +93,6 @@ async Task<Dictionary<string, Account>> EnsureAccountsAsync(Guid userId)
 
 async Task EnsureTransactionsAsync(Guid userId, Dictionary<string, Account> accounts)
 {
-    var hasSeedTransactions = await dbContext.Transactions
-        .AnyAsync(x => x.UserId == userId && !x.IsDeleted && x.Note != null && EF.Functions.Like(x.Note, "Seed sample:%"), cancellationToken);
-
-    if (hasSeedTransactions)
-    {
-        return;
-    }
-
     var categories = await dbContext.Categories
         .Where(x => x.UserId == userId && !x.IsArchived)
         .ToDictionaryAsync(x => (x.Name, x.Type), cancellationToken);
@@ -104,136 +101,193 @@ async Task EnsureTransactionsAsync(Guid userId, Dictionary<string, Account> acco
     var savingsAccount = accounts["Emergency Savings"];
     var walletAccount = accounts["Cash Wallet"];
 
-    var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+    var seedMonths = Enumerable.Range(0, 4)
+        .Select(offset => new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(offset - 3))
+        .ToList();
 
-    var requests = new[]
+    foreach (var monthStart in seedMonths)
     {
-        new UpsertTransactionRequest
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart,
+            "Monthly salary",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Income,
+                Amount = monthStart.Month == today.Month ? 98000m : 95000m + ((monthStart.Month % 3) * 1500m),
+                DateUtc = monthStart,
+                CategoryId = categories[("Salary", CategoryType.Income)].Id,
+                Note = "Seed sample: Monthly salary",
+                Merchant = "Tech Corp",
+                PaymentMethod = "Bank Transfer",
+                Tags = ["salary", "income"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(2),
+            "Savings transfer",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                TransferAccountId = savingsAccount.Id,
+                Type = TransactionType.Transfer,
+                Amount = monthStart.Month == today.Month ? 12000m : 10000m,
+                DateUtc = monthStart.AddDays(2),
+                Note = "Seed sample: Savings transfer",
+                PaymentMethod = "Internal Transfer",
+                Tags = ["savings"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(3),
+            "Monthly rent",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 22000m,
+                DateUtc = monthStart.AddDays(3),
+                CategoryId = categories[("Rent", CategoryType.Expense)].Id,
+                Note = "Seed sample: Monthly rent",
+                Merchant = "Green Residency",
+                PaymentMethod = "UPI",
+                Tags = ["home"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(5),
+            "Utilities bill",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 2600m + ((monthStart.Month % 2) * 250m),
+                DateUtc = monthStart.AddDays(5),
+                CategoryId = categories[("Utilities", CategoryType.Expense)].Id,
+                Note = "Seed sample: Utilities bill",
+                Merchant = "BESCOM",
+                PaymentMethod = "Net Banking",
+                Tags = ["home", "utilities"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(6),
+            "Fuel and cabs",
+            new UpsertTransactionRequest
+            {
+                AccountId = walletAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 1350m + ((monthStart.Month % 3) * 180m),
+                DateUtc = monthStart.AddDays(6),
+                CategoryId = categories[("Transport", CategoryType.Expense)].Id,
+                Note = "Seed sample: Fuel and cabs",
+                Merchant = "Uber",
+                PaymentMethod = "Cash",
+                Tags = ["commute"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(7),
+            "Groceries and dining",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 3200m + ((monthStart.Month % 3) * 350m),
+                DateUtc = monthStart.AddDays(7),
+                CategoryId = categories[("Food", CategoryType.Expense)].Id,
+                Note = "Seed sample: Groceries and dining",
+                Merchant = "BigBasket",
+                PaymentMethod = "Credit Card",
+                Tags = ["food", "home"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(10),
+            "Household shopping",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 3900m + ((monthStart.Month % 4) * 220m),
+                DateUtc = monthStart.AddDays(10),
+                CategoryId = categories[("Shopping", CategoryType.Expense)].Id,
+                Note = "Seed sample: Household shopping",
+                Merchant = "Amazon",
+                PaymentMethod = "Credit Card",
+                Tags = ["shopping"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(12),
+            "Streaming subscription",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 999m,
+                DateUtc = monthStart.AddDays(12),
+                CategoryId = categories[("Subscriptions", CategoryType.Expense)].Id,
+                Note = "Seed sample: Streaming subscription",
+                Merchant = "Netflix",
+                PaymentMethod = "Auto Debit",
+                Tags = ["subscription"]
+            });
+
+        await SeedTransactionIfMissingAsync(
+            userId,
+            monthStart.AddDays(13),
+            "Weekend outing",
+            new UpsertTransactionRequest
+            {
+                AccountId = salaryAccount.Id,
+                Type = TransactionType.Expense,
+                Amount = 2800m + ((monthStart.Month % 4) * 260m),
+                DateUtc = monthStart.AddDays(13),
+                CategoryId = categories[("Entertainment", CategoryType.Expense)].Id,
+                Note = "Seed sample: Weekend outing",
+                Merchant = "PVR Cinemas",
+                PaymentMethod = "UPI",
+                Tags = ["weekend", "fun"]
+            });
+    }
+
+    async Task SeedTransactionIfMissingAsync(Guid seedUserId, DateTime occurredAtUtc, string label, UpsertTransactionRequest request)
+    {
+        var expectedNote = $"Seed sample: {label}";
+        var exists = await dbContext.Transactions.AnyAsync(x =>
+            x.UserId == seedUserId &&
+            !x.IsDeleted &&
+            x.Note == expectedNote &&
+            x.DateUtc == occurredAtUtc,
+            cancellationToken);
+
+        if (exists)
         {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Income,
-            Amount = 95000m,
-            DateUtc = monthStart,
-            CategoryId = categories[("Salary", CategoryType.Income)].Id,
-            Note = "Seed sample: Monthly salary",
-            Merchant = "Tech Corp",
-            PaymentMethod = "Bank Transfer",
-            Tags = ["salary", "income"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            TransferAccountId = savingsAccount.Id,
-            Type = TransactionType.Transfer,
-            Amount = 10000m,
-            DateUtc = monthStart.AddDays(2),
-            Note = "Seed sample: Savings transfer",
-            PaymentMethod = "Internal Transfer",
-            Tags = ["savings"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 22000m,
-            DateUtc = monthStart.AddDays(3),
-            CategoryId = categories[("Rent", CategoryType.Expense)].Id,
-            Note = "Seed sample: Monthly rent",
-            Merchant = "Green Residency",
-            PaymentMethod = "UPI",
-            Tags = ["home"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 2800m,
-            DateUtc = monthStart.AddDays(5),
-            CategoryId = categories[("Utilities", CategoryType.Expense)].Id,
-            Note = "Seed sample: Utilities bill",
-            Merchant = "BESCOM",
-            PaymentMethod = "Net Banking",
-            Tags = ["home", "utilities"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = walletAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 1450m,
-            DateUtc = monthStart.AddDays(6),
-            CategoryId = categories[("Transport", CategoryType.Expense)].Id,
-            Note = "Seed sample: Fuel and cabs",
-            Merchant = "Uber",
-            PaymentMethod = "Cash",
-            Tags = ["commute"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 3200m,
-            DateUtc = monthStart.AddDays(7),
-            CategoryId = categories[("Food", CategoryType.Expense)].Id,
-            Note = "Seed sample: Groceries and dining",
-            Merchant = "BigBasket",
-            PaymentMethod = "Credit Card",
-            Tags = ["food", "home"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 4200m,
-            DateUtc = monthStart.AddDays(10),
-            CategoryId = categories[("Shopping", CategoryType.Expense)].Id,
-            Note = "Seed sample: Household shopping",
-            Merchant = "Amazon",
-            PaymentMethod = "Credit Card",
-            Tags = ["shopping"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 999m,
-            DateUtc = monthStart.AddDays(12),
-            CategoryId = categories[("Subscriptions", CategoryType.Expense)].Id,
-            Note = "Seed sample: Streaming subscription",
-            Merchant = "Netflix",
-            PaymentMethod = "Auto Debit",
-            Tags = ["subscription"]
-        },
-        new UpsertTransactionRequest
-        {
-            AccountId = salaryAccount.Id,
-            Type = TransactionType.Expense,
-            Amount = 3600m,
-            DateUtc = monthStart.AddDays(13),
-            CategoryId = categories[("Entertainment", CategoryType.Expense)].Id,
-            Note = "Seed sample: Weekend outing",
-            Merchant = "PVR Cinemas",
-            PaymentMethod = "UPI",
-            Tags = ["weekend", "fun"]
+            return;
         }
-    };
 
-    foreach (var request in requests)
-    {
-        await transactionService.CreateAsync(userId, request, cancellationToken);
+        await transactionService.CreateAsync(seedUserId, request, cancellationToken);
     }
 }
 
 async Task EnsureBudgetsAsync(Guid userId)
 {
-    var now = DateTime.UtcNow;
-    var existingCategoryIds = await dbContext.Budgets
-        .Where(x => x.UserId == userId && x.Year == now.Year && x.Month == now.Month)
-        .Select(x => x.CategoryId)
-        .ToListAsync(cancellationToken);
-
     var categories = await dbContext.Categories
         .Where(x => x.UserId == userId && !x.IsArchived && x.Type == CategoryType.Expense)
         .ToDictionaryAsync(x => x.Name, cancellationToken);
+
+    var seedMonths = Enumerable.Range(0, 4)
+        .Select(offset => new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(offset - 3))
+        .ToList();
 
     var budgetPlan = new Dictionary<string, decimal>
     {
@@ -245,20 +299,28 @@ async Task EnsureBudgetsAsync(Guid userId)
         ["Subscriptions"] = 2000m
     };
 
-    foreach (var item in budgetPlan)
+    foreach (var monthStart in seedMonths)
     {
-        var category = categories[item.Key];
-        if (existingCategoryIds.Contains(category.Id))
-        {
-            continue;
-        }
+        var existingCategoryIds = await dbContext.Budgets
+            .Where(x => x.UserId == userId && x.Year == monthStart.Year && x.Month == monthStart.Month)
+            .Select(x => x.CategoryId)
+            .ToListAsync(cancellationToken);
 
-        await budgetService.CreateAsync(userId, new CreateBudgetRequest(
-            category.Id,
-            now.Year,
-            now.Month,
-            item.Value,
-            80), cancellationToken);
+        foreach (var item in budgetPlan)
+        {
+            var category = categories[item.Key];
+            if (existingCategoryIds.Contains(category.Id))
+            {
+                continue;
+            }
+
+            await budgetService.CreateAsync(userId, new CreateBudgetRequest(
+                category.Id,
+                monthStart.Year,
+                monthStart.Month,
+                item.Value,
+                80), cancellationToken);
+        }
     }
 }
 
@@ -318,8 +380,14 @@ async Task EnsureRecurringRulesAsync(Guid userId, Dictionary<string, Account> ac
 
     var salaryAccount = accounts["Salary Account"];
     var savingsAccount = accounts["Emergency Savings"];
-
-    var nextMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+    var monthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+    var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+    var dueDates = new[]
+    {
+        monthStart.AddDays(Math.Min(Math.Max(today.Day + 1, 2), monthEnd.Day) - 1),
+        monthStart.AddDays(Math.Min(Math.Max(today.Day + 3, 4), monthEnd.Day) - 1),
+        monthStart.AddDays(Math.Min(Math.Max(today.Day + 5, 5), monthEnd.Day) - 1)
+    };
 
     async Task AddRuleAsync(CreateRecurringTransactionRequest request)
     {
@@ -339,7 +407,7 @@ async Task EnsureRecurringRulesAsync(Guid userId, Dictionary<string, Account> ac
         CategoryId = categories[("Rent", CategoryType.Expense)].Id,
         AccountId = salaryAccount.Id,
         Frequency = RecurringFrequency.Monthly,
-        StartDateUtc = nextMonthStart.AddDays(2),
+        StartDateUtc = dueDates[0],
         AutoCreateTransaction = true
     });
 
@@ -351,7 +419,19 @@ async Task EnsureRecurringRulesAsync(Guid userId, Dictionary<string, Account> ac
         CategoryId = categories[("Subscriptions", CategoryType.Expense)].Id,
         AccountId = salaryAccount.Id,
         Frequency = RecurringFrequency.Monthly,
-        StartDateUtc = nextMonthStart.AddDays(4),
+        StartDateUtc = dueDates[1],
+        AutoCreateTransaction = true
+    });
+
+    await AddRuleAsync(new CreateRecurringTransactionRequest
+    {
+        Title = "Monthly Freelance Payment",
+        Type = TransactionType.Income,
+        Amount = 18000m,
+        CategoryId = categories[("Salary", CategoryType.Income)].Id,
+        AccountId = salaryAccount.Id,
+        Frequency = RecurringFrequency.Monthly,
+        StartDateUtc = dueDates[2],
         AutoCreateTransaction = true
     });
 
@@ -363,7 +443,7 @@ async Task EnsureRecurringRulesAsync(Guid userId, Dictionary<string, Account> ac
         AccountId = salaryAccount.Id,
         TransferAccountId = savingsAccount.Id,
         Frequency = RecurringFrequency.Monthly,
-        StartDateUtc = nextMonthStart.AddDays(5),
+        StartDateUtc = dueDates[2],
         AutoCreateTransaction = true
     });
 }
@@ -416,4 +496,3 @@ static string LoadConnectionString(string rootPath)
 
     throw new InvalidOperationException("ConnectionStrings__DefaultConnection was not found in backend/.env.");
 }
-
