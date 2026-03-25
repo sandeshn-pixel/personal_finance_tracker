@@ -29,6 +29,10 @@ internal static class TransactionMapping
             x.PaymentMethod,
             x.RecurringTransactionId,
             x.Tags.OrderBy(t => t.Value).Select(t => t.Value).ToList(),
+            x.CreatedByUserId,
+            (x.CreatedByUser.FirstName + " " + x.CreatedByUser.LastName).Trim(),
+            x.UpdatedByUserId,
+            (x.UpdatedByUser.FirstName + " " + x.UpdatedByUser.LastName).Trim(),
             x.CreatedUtc,
             x.UpdatedUtc));
     }

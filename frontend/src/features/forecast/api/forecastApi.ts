@@ -46,11 +46,27 @@ export type ForecastDailyResponseDto = {
   points: ForecastDayPointDto[];
 };
 
-function buildQuery(accountId?: string) {
-  return accountId ? `?accountId=${encodeURIComponent(accountId)}` : "";
+export type ForecastQuery = {
+  accountId?: string;
+  accountIds?: string[];
+};
+
+function buildQuery(query?: ForecastQuery) {
+  const params = new URLSearchParams();
+  if (query?.accountId) {
+    params.set("accountId", query.accountId);
+  }
+  if (query?.accountIds?.length) {
+    for (const accountId of query.accountIds) {
+      params.append("accountIds", accountId);
+    }
+  }
+
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : "";
 }
 
 export const forecastApi = {
-  month: (accessToken: string, accountId?: string) => apiClient<ForecastMonthSummaryDto>(`/forecast/month${buildQuery(accountId)}`, { accessToken }),
-  daily: (accessToken: string, accountId?: string) => apiClient<ForecastDailyResponseDto>(`/forecast/daily${buildQuery(accountId)}`, { accessToken }),
+  month: (accessToken: string, query?: ForecastQuery) => apiClient<ForecastMonthSummaryDto>(`/forecast/month${buildQuery(query)}`, { accessToken }),
+  daily: (accessToken: string, query?: ForecastQuery) => apiClient<ForecastDailyResponseDto>(`/forecast/daily${buildQuery(query)}`, { accessToken }),
 };

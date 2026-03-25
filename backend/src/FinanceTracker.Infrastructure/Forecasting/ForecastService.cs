@@ -9,7 +9,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Forecasting;
 
-public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider timeProvider) : IForecastService
+public sealed class ForecastService(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider,
+    AccountAccessService accountAccessService) : IForecastService
 {
     private const int HistoryWindowDays = 90;
     private const int MinimumHistoryTransactionCount = 5;
@@ -36,7 +39,7 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
         var nextMonth = monthStart.AddMonths(1);
         var monthEnd = nextMonth.AddDays(-1);
 
-        var accounts = await ResolveScopedAccountsAsync(userId, query.AccountId, cancellationToken);
+        var accounts = await ResolveScopedAccountsAsync(userId, ResolveRequestedAccountIds(query), cancellationToken);
         var accountIds = accounts.Select(x => x.Id).ToList();
         var currentBalance = RoundMoney(accounts.Sum(x => x.CurrentBalance));
         var daysRemaining = Math.Max((monthEnd - today).Days + 1, 0);
@@ -44,9 +47,8 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
         var historyStart = today.AddDays(-HistoryWindowDays);
         var historicalTransactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId
-                && !x.IsDeleted
-                && x.Type != TransactionType.Transfer
+            .WhereUserCanView(userId)
+            .Where(x => x.Type != TransactionType.Transfer
                 && x.DateUtc >= historyStart
                 && x.DateUtc < today
                 && accountIds.Contains(x.AccountId))
@@ -63,7 +65,7 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
         var averageDailyExpense = hasSparseData ? 0m : RoundMoney(historicalExpense / HistoryWindowDays);
         var averageDailyNet = RoundMoney(averageDailyIncome - averageDailyExpense);
 
-        var recurringItems = await BuildUpcomingRecurringItemsAsync(userId, query.AccountId, today, nextMonth, cancellationToken);
+        var recurringItems = await BuildUpcomingRecurringItemsAsync(userId, accountIds, today, nextMonth, cancellationToken);
         var recurringByDate = recurringItems
             .GroupBy(x => x.ScheduledDateUtc)
             .ToDictionary(
@@ -122,37 +124,47 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
         return new ForecastComputationResult(summary, points);
     }
 
-    private async Task<List<Account>> ResolveScopedAccountsAsync(Guid userId, Guid? accountId, CancellationToken cancellationToken)
+    private static IReadOnlyCollection<Guid> ResolveRequestedAccountIds(ForecastQuery query)
     {
-        var query = dbContext.Accounts
-            .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsArchived);
-
-        if (accountId.HasValue)
+        if (query.AccountIds is { Length: > 0 })
         {
-            query = query.Where(x => x.Id == accountId.Value);
+            return query.AccountIds.Distinct().ToArray();
         }
 
-        var accounts = await query
+        return query.AccountId.HasValue ? [query.AccountId.Value] : [];
+    }
+
+    private async Task<List<Account>> ResolveScopedAccountsAsync(Guid userId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
+    {
+        if (accountIds.Count == 0)
+        {
+            return await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .ToListAsync(cancellationToken);
+        }
+
+        var accessibleAccounts = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
+            .AsNoTracking()
+            .Where(x => accountIds.Contains(x.Id))
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);
 
-        if (accountId.HasValue && accounts.Count == 0)
+        if (accessibleAccounts.Count != accountIds.Count)
         {
-            throw new NotFoundException("Account was not found.");
+            throw new NotFoundException("One or more accounts were not found.");
         }
 
-        return accounts;
+        return accessibleAccounts;
     }
 
-    private async Task<List<ForecastRecurringItemDto>> BuildUpcomingRecurringItemsAsync(Guid userId, Guid? accountId, DateTime today, DateTime nextMonth, CancellationToken cancellationToken)
+    private async Task<List<ForecastRecurringItemDto>> BuildUpcomingRecurringItemsAsync(Guid userId, IReadOnlyCollection<Guid> accountIds, DateTime today, DateTime nextMonth, CancellationToken cancellationToken)
     {
         var rules = await dbContext.RecurringTransactionRules
             .AsNoTracking()
-            .Where(x => x.UserId == userId
-                && x.Status == RecurringRuleStatus.Active
+            .Where(x => x.Status == RecurringRuleStatus.Active
                 && x.Type != TransactionType.Transfer
-                && (!accountId.HasValue || x.AccountId == accountId.Value))
+                && accountIds.Contains(x.AccountId))
             .Include(x => x.Account)
             .Include(x => x.Executions)
             .OrderBy(x => x.NextRunDateUtc)
@@ -166,9 +178,8 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
         var ruleIds = rules.Select(x => x.Id).ToList();
         var materializedOccurrences = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId
-                && !x.IsDeleted
-                && x.RecurringTransactionId.HasValue
+            .WhereUserCanView(userId)
+            .Where(x => x.RecurringTransactionId.HasValue
                 && ruleIds.Contains(x.RecurringTransactionId.Value)
                 && x.DateUtc >= today
                 && x.DateUtc < nextMonth)
@@ -266,21 +277,20 @@ public sealed class ForecastService(ApplicationDbContext dbContext, TimeProvider
             notes.Add("Projected balances dip below your current balance during the remainder of the month.");
         }
 
-        if (projectedEndBalance < 0m)
+        if (safeToSpend == 0m && minimumProjectedBalance < 0m)
         {
-            notes.Add("At the current pace, you are likely to end the month below zero.");
+            notes.Add("The forecast expects balances to move below zero before month end.");
         }
-        else if (safeToSpend <= 0m)
+
+        if (!hasSparseData && projectedEndBalance > currentBalance)
         {
-            notes.Add("There is no additional discretionary cushion without increasing the risk of a negative balance.");
+            notes.Add("Recent cashflow trends and known recurring items point to a higher month-end balance than today.");
         }
 
         return notes;
     }
 
-    private static decimal RoundMoney(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+    private static decimal RoundMoney(decimal amount) => decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
 
-    private sealed record ForecastComputationResult(
-        ForecastMonthSummaryDto Summary,
-        IReadOnlyCollection<ForecastDayPointDto> Points);
+    private sealed record ForecastComputationResult(ForecastMonthSummaryDto Summary, IReadOnlyCollection<ForecastDayPointDto> Points);
 }

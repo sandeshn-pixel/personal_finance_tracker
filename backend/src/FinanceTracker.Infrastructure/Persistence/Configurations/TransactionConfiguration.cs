@@ -30,9 +30,21 @@ public sealed class TransactionConfiguration : IEntityTypeConfiguration<Transact
             .HasForeignKey(x => x.CategoryId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.CreatedByUser)
+            .WithMany(x => x.AuthoredTransactions)
+            .HasForeignKey(x => x.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.UpdatedByUser)
+            .WithMany(x => x.UpdatedTransactions)
+            .HasForeignKey(x => x.UpdatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(x => new { x.UserId, x.DateUtc });
         builder.HasIndex(x => new { x.UserId, x.AccountId, x.DateUtc });
         builder.HasIndex(x => new { x.UserId, x.CategoryId, x.DateUtc });
         builder.HasIndex(x => new { x.UserId, x.Type, x.DateUtc });
+        builder.HasIndex(x => new { x.AccountId, x.DateUtc });
+        builder.HasIndex(x => new { x.TransferAccountId, x.DateUtc });
     }
 }

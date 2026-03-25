@@ -25,6 +25,26 @@ export type HealthScoreResponseDto = {
   suggestions: string[];
 };
 
+export type HealthScoreQuery = {
+  accountId?: string;
+  accountIds?: string[];
+};
+
+function buildQuery(query?: HealthScoreQuery) {
+  const params = new URLSearchParams();
+  if (query?.accountId) {
+    params.set("accountId", query.accountId);
+  }
+  if (query?.accountIds?.length) {
+    for (const accountId of query.accountIds) {
+      params.append("accountIds", accountId);
+    }
+  }
+
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : "";
+}
+
 export const insightsApi = {
-  healthScore: (accessToken: string) => apiClient<HealthScoreResponseDto>("/insights/health-score", { accessToken }),
+  healthScore: (accessToken: string, query?: HealthScoreQuery) => apiClient<HealthScoreResponseDto>(`/insights/health-score${buildQuery(query)}`, { accessToken }),
 };

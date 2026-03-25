@@ -19,6 +19,7 @@ public sealed record RecurringTransactionDto(
     DateTime? NextRunDateUtc,
     bool AutoCreateTransaction,
     RecurringRuleStatus Status,
+    bool CanManage,
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DateTime? LastProcessedAtUtc);

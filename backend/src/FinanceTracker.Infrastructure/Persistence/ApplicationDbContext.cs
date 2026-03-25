@@ -9,6 +9,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<AccountMembership> AccountMemberships => Set<AccountMembership>();
+    public DbSet<AccountInvite> AccountInvites => Set<AccountInvite>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<TransactionTag> TransactionTags => Set<TransactionTag>();

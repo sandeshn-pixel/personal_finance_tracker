@@ -80,11 +80,12 @@ export function RecurringTransactionsPage() {
         automationApi.status(accessToken),
       ]);
       const liveAccounts = accountsResponse.filter((item) => !item.isArchived);
+      const ownerManagedAccounts = liveAccounts.filter((item) => item.currentUserRole === "Owner");
       setAccounts(liveAccounts);
       setCategories(categoriesResponse.filter((item) => !item.isArchived));
       setRules(rulesResponse);
       setAutomationStatus(automationResponse);
-      reset((current) => ({ ...current, accountId: current.accountId || liveAccounts[0]?.id || "" }));
+      reset((current) => ({ ...current, accountId: current.accountId || ownerManagedAccounts[0]?.id || "" }));
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof ApiError ? error.message : "Unable to load recurring transactions.");
@@ -100,7 +101,7 @@ export function RecurringTransactionsPage() {
       type: "2",
       amount: 0,
       categoryId: "",
-      accountId: accounts[0]?.id ?? "",
+      accountId: accounts.find((account) => account.currentUserRole === "Owner")?.id ?? "",
       transferAccountId: "",
       frequency: "3",
       startDateUtc: new Date().toISOString().slice(0, 10),
@@ -110,6 +111,11 @@ export function RecurringTransactionsPage() {
   }
 
   function editRule(rule: RecurringTransactionDto) {
+    if (!rule.canManage) {
+      setErrorMessage("This recurring rule is visible because it is linked to a shared account, but only the owner can edit it.");
+      return;
+    }
+
     setEditing(rule);
     reset({
       title: rule.title,
@@ -194,6 +200,8 @@ export function RecurringTransactionsPage() {
 
   const filteredCategories = useMemo(() => categories.filter((item) => selectedType === "1" ? item.type === "Income" : item.type === "Expense"), [categories, selectedType]);
   const activeCount = useMemo(() => rules.filter((rule) => rule.status === "Active").length, [rules]);
+  const manageableAccounts = useMemo(() => accounts.filter((account) => account.currentUserRole === "Owner"), [accounts]);
+  const sharedReadOnlyRules = useMemo(() => rules.filter((rule) => !rule.canManage), [rules]);
   const automationOutcome = automationStatus?.lastRunSucceeded == null ? "Awaiting first background run" : automationStatus.lastRunSucceeded ? "Last run completed successfully" : "Last run needs attention";
 
   if (loading && rules.length === 0 && accounts.length === 0) {
@@ -203,7 +211,8 @@ export function RecurringTransactionsPage() {
   return (
     <div className="page-stack">
       <SectionHeader title="Recurring transactions" description="Define reusable rules, pause and resume schedules, and keep manual processing available alongside the background scheduler." action={<Button type="button" onClick={processDueRules}>Run due now</Button>} />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
+      {errorMessage ? <Alert message={errorMessage} variant="info" /> : null}
+      {sharedReadOnlyRules.length > 0 ? <Alert message={`You can review ${sharedReadOnlyRules.length} shared recurring rule${sharedReadOnlyRules.length === 1 ? "" : "s"} here, but only the owner can change them.`} variant="info" /> : null}
       {processingSummary ? <Alert message={`Processed ${processingSummary.occurrencesProcessed} occurrences and created ${processingSummary.transactionsCreated} transactions.`} variant="success" /> : null}
       <div className="stats-grid stats-grid--four">
         <StatCard label="Rules" value={String(rules.length)} hint={`${activeCount} active schedules.`} />
@@ -233,6 +242,7 @@ export function RecurringTransactionsPage() {
           <div className="panel-card__header">
             <h3>{editing ? "Edit recurring rule" : "Create recurring rule"}</h3>
             <p>Generated transactions obey the same account, category, and balance rules as manual entries.</p>
+            {manageableAccounts.length === 0 ? <small>No owner-managed accounts are available for creating recurring rules right now.</small> : null}
           </div>
           <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
             <Field label="Title" error={errors.title?.message}><input {...register("title")} placeholder="Monthly rent" /></Field>
@@ -253,7 +263,7 @@ export function RecurringTransactionsPage() {
               <Field label="Account" error={errors.accountId?.message}>
                 <SelectField {...register("accountId")}>
                   <option value="">Select account</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {manageableAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </SelectField>
               </Field>
             </div>
@@ -261,7 +271,7 @@ export function RecurringTransactionsPage() {
               <Field label="Destination account" error={errors.transferAccountId?.message}>
                 <SelectField {...register("transferAccountId")}>
                   <option value="">Select destination account</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {manageableAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </SelectField>
               </Field>
             ) : (
@@ -302,6 +312,7 @@ export function RecurringTransactionsPage() {
                     </div>
                     <div className="budget-card__aside">
                       <span className={`status-badge status-badge--${rule.status === "Active" ? "default" : rule.status === "Paused" ? "warning" : "danger"}`}>{rule.status}</span>
+                      {!rule.canManage ? <span className="status-badge status-badge--warning">Shared view</span> : null}
                       <small>{rule.autoCreateTransaction ? "Auto-create" : "Reminder only"}</small>
                     </div>
                   </div>
@@ -315,11 +326,17 @@ export function RecurringTransactionsPage() {
                     <span>{rule.endDateUtc ? `Ends ${formatDate(rule.endDateUtc)}` : "No end date"}</span>
                     <span>{rule.lastProcessedAtUtc ? `Last processed ${formatDate(rule.lastProcessedAtUtc)}` : "Not processed yet"}</span>
                   </div>
-                  <div className="inline-actions">
-                    <button type="button" className="ghost-button ghost-button--small" onClick={() => editRule(rule)}>Edit</button>
-                    {rule.status === "Completed" ? null : <button type="button" className="ghost-button ghost-button--small" onClick={() => toggleRule(rule)}>{rule.status === "Paused" ? "Resume" : "Pause"}</button>}
-                    <button type="button" className="ghost-button ghost-button--small" onClick={() => deleteRule(rule.id)}>Delete</button>
-                  </div>
+                  {rule.canManage ? (
+                    <div className="inline-actions">
+                      <button type="button" className="ghost-button ghost-button--small" onClick={() => editRule(rule)}>Edit</button>
+                      {rule.status === "Completed" ? null : <button type="button" className="ghost-button ghost-button--small" onClick={() => toggleRule(rule)}>{rule.status === "Paused" ? "Resume" : "Pause"}</button>}
+                      <button type="button" className="ghost-button ghost-button--small" onClick={() => deleteRule(rule.id)}>Delete</button>
+                    </div>
+                  ) : (
+                    <div className="budget-card__metrics">
+                      <span>Read-only shared rule</span>
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
@@ -329,3 +346,5 @@ export function RecurringTransactionsPage() {
     </div>
   );
 }
+
+

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { Alert } from "../../../shared/components/Alert";
@@ -20,10 +20,22 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { login, status } = useAuth();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const state = location.state as { from?: { pathname?: string } } | null;
-  const from = state?.from?.pathname ?? "/dashboard";
+  const state = location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null;
+  const redirectParam = searchParams.get("redirect");
+  const from = useMemo(() => {
+    if (redirectParam && redirectParam.startsWith("/")) {
+      return redirectParam;
+    }
+
+    if (state?.from?.pathname) {
+      return `${state.from.pathname}${state.from.search ?? ""}${state.from.hash ?? ""}`;
+    }
+
+    return "/dashboard";
+  }, [redirectParam, state]);
 
   const {
     register,
@@ -54,8 +66,10 @@ export function LoginPage() {
   }
 
   if (status === "authenticated") {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={from} replace />;
   }
+
+  const signupLink = redirectParam ? `/signup?redirect=${encodeURIComponent(redirectParam)}` : "/signup";
 
   return (
     <AuthCard
@@ -63,7 +77,7 @@ export function LoginPage() {
       subtitle="Sign in to continue into the secure foundation of your finance workspace."
       footer={
         <p>
-          New here? <Link to="/signup">Create your account</Link>
+          New here? <Link to={signupLink}>Create your account</Link>
         </p>
       }
     >

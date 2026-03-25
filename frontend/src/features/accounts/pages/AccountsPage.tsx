@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
+import { useWorkspaceScope } from "../../../app/providers/WorkspaceScopeProvider";
 import { accountsApi, type AccountDto } from "../api/accountsApi";
 import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/components/Button";
@@ -14,6 +15,7 @@ import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { SelectField } from "../../../shared/components/SelectField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { formatCurrency } from "../../../shared/lib/format";
+import { filterAccountsForView, hasSharedGuestAccounts } from "../../../shared/lib/sharedAccessView";
 
 const accountSchema = z.object({
   name: z.string().trim().min(1, "Account name is required.").max(100),
@@ -49,10 +51,12 @@ const typeLabels: Record<AccountDto["type"], string> = {
 
 export function AccountsPage() {
   const { accessToken } = useAuth();
+  const { sharedAccessView: accountView } = useWorkspaceScope();
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState<AccountDto | null>(null);
+  const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<AccountFormValues>({
     resolver: zodResolver(accountSchema),
@@ -66,9 +70,16 @@ export function AccountsPage() {
     setLoading(true);
     try {
       setAccounts(await accountsApi.list(accessToken));
+      setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to load accounts.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Accounts are refreshing too quickly for the current session limit. Please wait a moment and try again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to load accounts.");
+      }
     } finally {
       setLoading(false);
     }
@@ -80,6 +91,12 @@ export function AccountsPage() {
   }
 
   function editAccount(account: AccountDto) {
+    if (account.currentUserRole !== "Owner") {
+      setErrorVariant("info");
+      setErrorMessage("Only the account owner can edit shared account details in this version.");
+      return;
+    }
+
     setEditing(account);
     reset({
       name: account.name,
@@ -111,24 +128,48 @@ export function AccountsPage() {
       resetForCreate();
       await loadAccounts();
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to save account.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Accounts are being updated too quickly. Please wait a moment before trying again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to save account.");
+      }
     }
   }
 
-  async function archiveAccount(id: string) {
-    if (!accessToken || !window.confirm("Archive this account?")) return;
-    await accountsApi.archive(accessToken, id);
+  async function archiveAccount(account: AccountDto) {
+    if (!accessToken) return;
+    if (account.currentUserRole !== "Owner") {
+      setErrorVariant("info");
+      setErrorMessage("Only the account owner can archive a shared account.");
+      return;
+    }
+
+    if (!window.confirm("Archive this account?")) return;
+    await accountsApi.archive(accessToken, account.id);
     await loadAccounts();
   }
 
   const liveBalance = useMemo(() => accounts.filter((item) => !item.isArchived).reduce((sum, item) => sum + item.currentBalance, 0), [accounts]);
+  const ownedPendingInviteCount = useMemo(() => accounts.reduce((sum, item) => sum + item.pendingInviteCount, 0), [accounts]);
+  const showSharedViewToggle = useMemo(() => hasSharedGuestAccounts(accounts), [accounts]);
+  const visibleAccounts = useMemo(() => filterAccountsForView(accounts, accountView), [accountView, accounts]);
 
   if (loading) return <PageLoader label="Loading accounts" />;
 
   return (
     <div className="page-stack">
       <SectionHeader title="Accounts" description="Manage the ledgers that transactions will affect." action={<Button type="button" onClick={resetForCreate}>New account</Button>} />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
+      {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
+      {ownedPendingInviteCount > 0 ? (
+        <div className="page-context-row">
+          <div className="rules-preview">
+            <strong>Sharing follow-up waiting.</strong>
+            <p>You have {ownedPendingInviteCount} pending shared-account invite{ownedPendingInviteCount === 1 ? "" : "s"} across your owned accounts.</p>
+          </div>
+        </div>
+      ) : null}
       <div className="accounts-grid">
         <section className="panel-card panel-card--form">
           <div className="panel-card__header">
@@ -155,27 +196,47 @@ export function AccountsPage() {
         </section>
 
         <section className="panel-card">
-          <div className="panel-card__header">
-            <h3>Account list</h3>
-            <p>Live balance: {formatCurrency(liveBalance)}</p>
+          <div className="panel-card__header panel-card__header--inline">
+            <div>
+              <h3>Account list</h3>
+              <p>Live balance: {formatCurrency(liveBalance)}</p>
+            </div>
+            
           </div>
-          {accounts.length === 0 ? (
-            <EmptyState title="No accounts yet" description="Create your first account to start recording transactions safely." />
+          {visibleAccounts.length === 0 ? (
+            <EmptyState title="No accounts in this view" description={accountView === "shared" ? "Shared accounts you can access will appear here." : accountView === "mine" ? "Your owned and private accounts will appear here." : "Create your first account to start recording transactions safely."} />
           ) : (
             <div className="account-list">
-              {accounts.map((account) => (
+              {visibleAccounts.map((account) => (
                 <article key={account.id} className={`account-card ${account.isArchived ? "account-card--archived" : ""}`}>
                   <div>
-                    <strong>{account.name}</strong>
-                    <p>{typeLabels[account.type]} • {account.currencyCode}</p>
-                    <small>{account.institutionName || "Personal ledger"}</small>
+                    <div className="account-card__title-row">
+                      <strong>{account.name}</strong>
+                      {account.isShared ? <span className="status-badge status-badge--default">Shared</span> : null}
+                      <span className="status-badge status-badge--warning">{account.currentUserRole}</span>
+                      {account.currentUserRole === "Owner" && account.pendingInviteCount > 0 ? <span className="status-badge status-badge--default">{account.pendingInviteCount} pending invite{account.pendingInviteCount === 1 ? "" : "s"}</span> : null}
+                    </div>
+                    <p>{typeLabels[account.type]} | {account.currencyCode}</p>
+                    <small>
+                      {account.institutionName || "Personal ledger"}
+                      {account.isShared ? ` | ${account.memberCount} members | Owner: ${account.ownerDisplayName}` : ""}
+                      {account.currentUserRole === "Owner" && account.pendingInviteCount > 0 ? ` | ${account.pendingInviteCount} invite${account.pendingInviteCount === 1 ? "" : "s"} awaiting action` : ""}
+                    </small>
                   </div>
                   <div className="account-card__aside">
                     <strong>{formatCurrency(account.currentBalance, account.currencyCode)}</strong>
                     <div className="inline-actions">
                       <Link to={`/accounts/${account.id}`} className="ghost-button ghost-button--small account-card__link-button">Details</Link>
-                      <button type="button" className="ghost-button ghost-button--small" onClick={() => editAccount(account)}>Edit</button>
-                      {!account.isArchived ? <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveAccount(account.id)}>Archive</button> : null}
+                      {account.currentUserRole === "Owner" ? (
+                        <Link
+                          to={`/accounts/${account.id}#sharing`}
+                          className={`ghost-button ghost-button--small account-card__link-button ${account.pendingInviteCount > 0 ? "account-card__link-button--attention" : ""}`}
+                        >
+                          Manage sharing{account.pendingInviteCount > 0 ? ` (${account.pendingInviteCount})` : ""}
+                        </Link>
+                      ) : null}
+                      {account.currentUserRole === "Owner" ? <button type="button" className="ghost-button ghost-button--small" onClick={() => editAccount(account)}>Edit</button> : null}
+                      {!account.isArchived && account.currentUserRole === "Owner" ? <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveAccount(account)}>Archive</button> : null}
                     </div>
                   </div>
                 </article>
@@ -187,3 +248,11 @@ export function AccountsPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

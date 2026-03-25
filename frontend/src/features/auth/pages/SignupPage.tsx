@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { Alert } from "../../../shared/components/Alert";
@@ -33,8 +33,11 @@ type SignupFormValues = z.infer<typeof signupSchema>;
 
 export function SignupPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { signup } = useAuth();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const redirectParam = searchParams.get("redirect");
+  const destination = useMemo(() => redirectParam && redirectParam.startsWith("/") ? redirectParam : "/dashboard", [redirectParam]);
 
   const {
     register,
@@ -61,7 +64,7 @@ export function SignupPage() {
         email: values.email,
         password: values.password,
       });
-      navigate("/dashboard", { replace: true });
+      navigate(destination, { replace: true });
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorMessage(error.message);
@@ -72,13 +75,15 @@ export function SignupPage() {
     }
   }
 
+  const loginLink = redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login";
+
   return (
     <AuthCard
       title="Create your workspace"
       subtitle="Start with a hardened account layer and a clean shell for the finance modules that follow."
       footer={
         <p>
-          Already have an account? <Link to="/login">Sign in</Link>
+          Already have an account? <Link to={loginLink}>Sign in</Link>
         </p>
       }
     >

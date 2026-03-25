@@ -10,7 +10,7 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
         {
             await next(context);
         }
-        catch (ApplicationExceptionBase ex) when (ex is ValidationException or ConflictException or NotFoundException)
+        catch (ApplicationExceptionBase ex) when (ex is ValidationException or ConflictException or NotFoundException or ForbiddenException)
         {
             await WriteKnownProblemAsync(context, ex);
         }
@@ -37,6 +37,7 @@ public sealed class GlobalExceptionMiddleware(RequestDelegate next, ILogger<Glob
             ValidationException => (StatusCodes.Status400BadRequest, "Validation failed"),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             NotFoundException => (StatusCodes.Status404NotFound, "Not found"),
+            ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden"),
             _ => (StatusCodes.Status400BadRequest, "Request error")
         };
 

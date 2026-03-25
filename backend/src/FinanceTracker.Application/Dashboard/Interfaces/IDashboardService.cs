@@ -4,5 +4,5 @@ namespace FinanceTracker.Application.Dashboard.Interfaces;
 
 public interface IDashboardService
 {
-    Task<DashboardSummaryDto> GetSummaryAsync(Guid userId, CancellationToken cancellationToken);
+    Task<DashboardSummaryDto> GetSummaryAsync(Guid userId, DashboardQuery query, CancellationToken cancellationToken);
 }

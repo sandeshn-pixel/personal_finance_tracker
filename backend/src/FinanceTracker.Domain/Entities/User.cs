@@ -14,6 +14,14 @@ public sealed class User : AuditableEntity
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
     public ICollection<Account> Accounts { get; set; } = new List<Account>();
+    public ICollection<AccountMembership> AccountMemberships { get; set; } = new List<AccountMembership>();
+    public ICollection<AccountMembership> InvitedAccountMemberships { get; set; } = new List<AccountMembership>();
+    public ICollection<AccountMembership> ModifiedAccountMemberships { get; set; } = new List<AccountMembership>();
+    public ICollection<AccountInvite> SentAccountInvites { get; set; } = new List<AccountInvite>();
+    public ICollection<AccountInvite> AcceptedAccountInvites { get; set; } = new List<AccountInvite>();
+    public ICollection<AccountInvite> RevokedAccountInvites { get; set; } = new List<AccountInvite>();
+    public ICollection<Transaction> AuthoredTransactions { get; set; } = new List<Transaction>();
+    public ICollection<Transaction> UpdatedTransactions { get; set; } = new List<Transaction>();
     public ICollection<Category> Categories { get; set; } = new List<Category>();
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<Budget> Budgets { get; set; } = new List<Budget>();

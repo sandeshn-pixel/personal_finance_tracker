@@ -13,7 +13,9 @@ public sealed record BudgetDto(
     decimal Remaining,
     decimal PercentageUsed,
     bool IsOverBudget,
-    bool IsThresholdReached);
+    bool IsThresholdReached,
+    bool CanManage,
+    string OwnerDisplayName);
 
 public sealed record BudgetMonthSummaryDto(
     int Year,

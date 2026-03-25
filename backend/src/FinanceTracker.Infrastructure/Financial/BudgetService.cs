@@ -1,4 +1,4 @@
-﻿using FinanceTracker.Application.Budgets.DTOs;
+using FinanceTracker.Application.Budgets.DTOs;
 using FinanceTracker.Application.Budgets.Interfaces;
 using FinanceTracker.Application.Common;
 using FinanceTracker.Domain.Entities;
@@ -8,21 +8,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Financial;
 
-public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetService
+public sealed class BudgetService(
+    ApplicationDbContext dbContext,
+    AccountAccessService accountAccessService) : IBudgetService
 {
     public async Task<IReadOnlyCollection<BudgetDto>> ListByMonthAsync(Guid userId, BudgetMonthQuery query, CancellationToken cancellationToken)
     {
-        var budgets = await dbContext.Budgets
-            .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Year == query.Year && x.Month == query.Month)
-            .Include(x => x.Category)
-            .OrderBy(x => x.Category.Name)
-            .ToListAsync(cancellationToken);
-
-        var actuals = await LoadActualsAsync(userId, query.Year, query.Month, cancellationToken);
+        var sharedAccounts = await LoadAccessibleSharedAccountsAsync(userId, cancellationToken);
+        var budgets = await LoadVisibleBudgetsAsync(userId, query.Year, query.Month, sharedAccounts, cancellationToken);
+        var actuals = await LoadActualsAsync(userId, query.Year, query.Month, sharedAccounts, cancellationToken);
 
         return budgets
-            .Select(budget => MapBudget(budget, actuals.GetValueOrDefault(budget.CategoryId)))
+            .Select(budget => MapBudget(
+                budget,
+                actuals.GetValueOrDefault((budget.UserId, budget.CategoryId)),
+                budget.UserId == userId))
             .ToList();
     }
 
@@ -64,15 +64,17 @@ public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetServi
         dbContext.Budgets.Add(budget);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var actuals = await LoadActualsAsync(userId, request.Year, request.Month, cancellationToken);
+        var actuals = await LoadActualsAsync(userId, request.Year, request.Month, [], cancellationToken);
         budget.Category = category;
-        return MapBudget(budget, actuals.GetValueOrDefault(budget.CategoryId));
+        budget.User = await dbContext.Users.SingleAsync(x => x.Id == userId, cancellationToken);
+        return MapBudget(budget, actuals.GetValueOrDefault((budget.UserId, budget.CategoryId)), true);
     }
 
     public async Task<BudgetDto> UpdateAsync(Guid userId, Guid budgetId, UpdateBudgetRequest request, CancellationToken cancellationToken)
     {
         var budget = await dbContext.Budgets
             .Include(x => x.Category)
+            .Include(x => x.User)
             .SingleOrDefaultAsync(x => x.UserId == userId && x.Id == budgetId, cancellationToken)
             ?? throw new NotFoundException("Budget was not found.");
 
@@ -80,8 +82,8 @@ public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetServi
         budget.AlertThresholdPercent = request.AlertThresholdPercent;
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var actuals = await LoadActualsAsync(userId, budget.Year, budget.Month, cancellationToken);
-        return MapBudget(budget, actuals.GetValueOrDefault(budget.CategoryId));
+        var actuals = await LoadActualsAsync(userId, budget.Year, budget.Month, [], cancellationToken);
+        return MapBudget(budget, actuals.GetValueOrDefault((budget.UserId, budget.CategoryId)), true);
     }
 
     public async Task DeleteAsync(Guid userId, Guid budgetId, CancellationToken cancellationToken)
@@ -157,28 +159,132 @@ public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetServi
             budgets.Count(x => x.IsThresholdReached));
     }
 
-    private async Task<Dictionary<Guid, decimal>> LoadActualsAsync(Guid userId, int year, int month, CancellationToken cancellationToken)
+    private async Task<List<Budget>> LoadVisibleBudgetsAsync(Guid userId, int year, int month, IReadOnlyCollection<(Guid AccountId, Guid OwnerUserId)> sharedAccounts, CancellationToken cancellationToken)
     {
-        var baseQuery = dbContext.Transactions
+        var ownBudgets = await dbContext.Budgets
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted && x.Type == TransactionType.Expense && x.CategoryId != null && x.DateUtc.Year == year && x.DateUtc.Month == month)
-            .Select(x => new { CategoryId = x.CategoryId!.Value, x.Amount });
+            .Where(x => x.UserId == userId && x.Year == year && x.Month == month)
+            .Include(x => x.Category)
+            .Include(x => x.User)
+            .OrderBy(x => x.Category.Name)
+            .ToListAsync(cancellationToken);
 
-        if (string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.Ordinal))
+        if (sharedAccounts.Count == 0)
         {
-            var rows = await baseQuery.ToListAsync(cancellationToken);
-            return rows
-                .GroupBy(x => x.CategoryId)
-                .ToDictionary(x => x.Key, x => x.Sum(item => item.Amount));
+            return ownBudgets;
         }
 
-        return await baseQuery
-            .GroupBy(x => x.CategoryId)
-            .Select(g => new { CategoryId = g.Key, Amount = g.Sum(x => x.Amount) })
-            .ToDictionaryAsync(x => x.CategoryId, x => x.Amount, cancellationToken);
+        var sharedAccountIds = sharedAccounts.Select(x => x.AccountId).Distinct().ToList();
+        var sharedOwnerIds = sharedAccounts.Select(x => x.OwnerUserId).Distinct().ToList();
+
+        var sharedBudgetIds = await dbContext.Transactions
+            .AsNoTracking()
+            .Where(x => !x.IsDeleted
+                && x.Type == TransactionType.Expense
+                && x.CategoryId != null
+                && x.DateUtc.Year == year
+                && x.DateUtc.Month == month
+                && sharedAccountIds.Contains(x.AccountId)
+                && sharedOwnerIds.Contains(x.UserId))
+            .Select(x => new { x.UserId, CategoryId = x.CategoryId!.Value })
+            .Distinct()
+            .Join(
+                dbContext.Budgets.AsNoTracking().Where(x => x.Year == year && x.Month == month && sharedOwnerIds.Contains(x.UserId)),
+                transaction => new { transaction.UserId, transaction.CategoryId },
+                budget => new { budget.UserId, budget.CategoryId },
+                (_, budget) => budget.Id)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (sharedBudgetIds.Count == 0)
+        {
+            return ownBudgets;
+        }
+
+        var sharedBudgets = await dbContext.Budgets
+            .AsNoTracking()
+            .Where(x => sharedBudgetIds.Contains(x.Id))
+            .Include(x => x.Category)
+            .Include(x => x.User)
+            .ToListAsync(cancellationToken);
+
+        return ownBudgets
+            .Concat(sharedBudgets)
+            .OrderBy(x => x.UserId == userId ? 0 : 1)
+            .ThenBy(x => BuildDisplayName(x.User))
+            .ThenBy(x => x.Category.Name)
+            .ToList();
     }
 
-    private static BudgetDto MapBudget(Budget budget, decimal actualSpent)
+    private async Task<Dictionary<(Guid UserId, Guid CategoryId), decimal>> LoadActualsAsync(
+        Guid userId,
+        int year,
+        int month,
+        IReadOnlyCollection<(Guid AccountId, Guid OwnerUserId)> sharedAccounts,
+        CancellationToken cancellationToken)
+    {
+        var actuals = new Dictionary<(Guid UserId, Guid CategoryId), decimal>();
+
+        var ownRows = await dbContext.Transactions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId
+                && !x.IsDeleted
+                && x.Type == TransactionType.Expense
+                && x.CategoryId != null
+                && x.DateUtc.Year == year
+                && x.DateUtc.Month == month)
+            .Select(x => new { x.UserId, CategoryId = x.CategoryId!.Value, x.Amount })
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in ownRows)
+        {
+            var key = (row.UserId, row.CategoryId);
+            actuals[key] = actuals.GetValueOrDefault(key) + row.Amount;
+        }
+
+        if (sharedAccounts.Count == 0)
+        {
+            return actuals;
+        }
+
+        var sharedAccountIds = sharedAccounts.Select(x => x.AccountId).Distinct().ToList();
+        var sharedOwnerIds = sharedAccounts.Select(x => x.OwnerUserId).Distinct().ToList();
+
+        var sharedRows = await dbContext.Transactions
+            .AsNoTracking()
+            .Where(x => !x.IsDeleted
+                && x.Type == TransactionType.Expense
+                && x.CategoryId != null
+                && x.DateUtc.Year == year
+                && x.DateUtc.Month == month
+                && sharedAccountIds.Contains(x.AccountId)
+                && sharedOwnerIds.Contains(x.UserId))
+            .Select(x => new { x.UserId, CategoryId = x.CategoryId!.Value, x.Amount })
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in sharedRows)
+        {
+            var key = (row.UserId, row.CategoryId);
+            actuals[key] = actuals.GetValueOrDefault(key) + row.Amount;
+        }
+
+        return actuals;
+    }
+
+    private async Task<IReadOnlyCollection<(Guid AccountId, Guid OwnerUserId)>> LoadAccessibleSharedAccountsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var accounts = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: true)
+            .Where(x => x.UserId != userId)
+            .Select(x => new { x.Id, x.UserId })
+            .ToListAsync(cancellationToken);
+
+        return accounts
+            .Select(x => (x.Id, x.UserId))
+            .Distinct()
+            .ToList();
+    }
+
+    private static BudgetDto MapBudget(Budget budget, decimal actualSpent, bool canManage)
     {
         var remaining = decimal.Round(budget.Amount - actualSpent, 2, MidpointRounding.AwayFromZero);
         var percentageUsed = budget.Amount == 0m
@@ -200,6 +306,14 @@ public sealed class BudgetService(ApplicationDbContext dbContext) : IBudgetServi
             remaining,
             percentageUsed,
             isOverBudget,
-            isThresholdReached);
+            isThresholdReached,
+            canManage,
+            BuildDisplayName(budget.User));
+    }
+
+    private static string BuildDisplayName(User user)
+    {
+        var fullName = $"{user.FirstName} {user.LastName}".Trim();
+        return string.IsNullOrWhiteSpace(fullName) ? user.Email : fullName;
     }
 }

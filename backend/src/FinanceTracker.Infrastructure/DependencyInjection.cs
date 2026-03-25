@@ -1,4 +1,4 @@
-﻿using FinanceTracker.Application.Accounts.Interfaces;
+using FinanceTracker.Application.Accounts.Interfaces;
 using FinanceTracker.Application.Automation.Interfaces;
 using FinanceTracker.Application.Auth.Interfaces;
 using FinanceTracker.Application.Budgets.Interfaces;
@@ -45,9 +45,12 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITokenGenerator, TokenGenerator>();
         services.AddScoped<IPasswordResetEmailSender, PasswordResetEmailSender>();
+        services.AddScoped<IAccountInviteEmailSender, AccountInviteEmailSender>();
         services.AddScoped<IPasswordHasher<Domain.Entities.User>, PasswordHasher<Domain.Entities.User>>();
         services.AddScoped<ICategorySeeder, CategorySeeder>();
+        services.AddScoped<AccountAccessService>();
         services.AddScoped<IAccountService, AccountService>();
+        services.AddScoped<IAccountMembershipService, AccountMembershipService>();
         services.AddScoped<ICategoryService, CategoryService>();
         services.AddScoped<ITransactionService, TransactionService>();
         services.AddScoped<IBudgetService, BudgetService>();
@@ -68,4 +71,3 @@ public static class DependencyInjection
         return services;
     }
 }
-

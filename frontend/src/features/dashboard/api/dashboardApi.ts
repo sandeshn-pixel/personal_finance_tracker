@@ -44,6 +44,8 @@ export type BudgetUsageItemDto = {
   usagePercent: number;
   isOverBudget: boolean;
   isThresholdReached: boolean;
+  canManage: boolean;
+  ownerDisplayName: string;
 };
 
 export type BudgetHealthDto = {
@@ -52,6 +54,8 @@ export type BudgetHealthDto = {
   totalRemaining: number;
   overBudgetCount: number;
   thresholdReachedCount: number;
+  sharedReadOnlyBudgetCount: number;
+  sharedOwnerCount: number;
 };
 
 export type SavingsAutomationSummaryDto = {
@@ -91,6 +95,26 @@ export type DashboardSummaryDto = {
   recentGoalActivities: RecentGoalActivityDto[];
 };
 
+export type DashboardQuery = {
+  accountId?: string;
+  accountIds?: string[];
+};
+
+function buildDashboardQuery(query?: DashboardQuery) {
+  const params = new URLSearchParams();
+  if (query?.accountId) {
+    params.set("accountId", query.accountId);
+  }
+  if (query?.accountIds?.length) {
+    for (const accountId of query.accountIds) {
+      params.append("accountIds", accountId);
+    }
+  }
+
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : "";
+}
+
 export const dashboardApi = {
-  summary: (accessToken: string) => apiClient<DashboardSummaryDto>("/dashboard/summary", { accessToken }),
+  summary: (accessToken: string, query?: DashboardQuery) => apiClient<DashboardSummaryDto>(`/dashboard/summary${buildDashboardQuery(query)}`, { accessToken }),
 };

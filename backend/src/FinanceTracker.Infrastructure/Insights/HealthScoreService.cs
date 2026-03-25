@@ -1,12 +1,18 @@
+using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Insights.DTOs;
 using FinanceTracker.Application.Insights.Interfaces;
+using FinanceTracker.Domain.Entities;
 using FinanceTracker.Domain.Enums;
+using FinanceTracker.Infrastructure.Financial;
 using FinanceTracker.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Insights;
 
-public sealed class HealthScoreService(ApplicationDbContext dbContext, TimeProvider timeProvider) : IHealthScoreService
+public sealed class HealthScoreService(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider,
+    AccountAccessService accountAccessService) : IHealthScoreService
 {
     private const int LookbackMonths = 3;
     private const int SavingsWeight = 30;
@@ -14,39 +20,45 @@ public sealed class HealthScoreService(ApplicationDbContext dbContext, TimeProvi
     private const int BudgetWeight = 20;
     private const int BufferWeight = 30;
 
-    public async Task<HealthScoreResponseDto> GetAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<HealthScoreResponseDto> GetAsync(Guid userId, HealthScoreQuery query, CancellationToken cancellationToken)
     {
         var today = DateTime.SpecifyKind(timeProvider.GetUtcNow().UtcDateTime.Date, DateTimeKind.Utc);
         var currentMonthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var lookbackStart = currentMonthStart.AddMonths(-LookbackMonths);
         var lookbackEnd = currentMonthStart.AddDays(-1);
 
-        var activeAccounts = await dbContext.Accounts
-            .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsArchived)
-            .ToListAsync(cancellationToken);
-
+        var activeAccounts = await ResolveScopedAccountsAsync(userId, ResolveRequestedAccountIds(query), cancellationToken);
+        var activeAccountIds = activeAccounts.Select(x => x.Id).ToHashSet();
         var currentBalance = activeAccounts.Sum(x => x.CurrentBalance);
+        var includesSharedGuestAccounts = activeAccounts.Any(x => x.UserId != userId);
 
         var transactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId
-                && !x.IsDeleted
-                && x.Type != TransactionType.Transfer
+            .WhereUserCanView(userId)
+            .Where(x => x.Type != TransactionType.Transfer
                 && x.DateUtc >= lookbackStart
-                && x.DateUtc < currentMonthStart)
+                && x.DateUtc < currentMonthStart
+                && activeAccountIds.Contains(x.AccountId))
             .ToListAsync(cancellationToken);
 
-        var budgets = (await dbContext.Budgets
-            .AsNoTracking()
-            .Where(x => x.UserId == userId)
-            .ToListAsync(cancellationToken))
-            .Where(x =>
-            {
-                var monthStart = new DateTime(x.Year, x.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-                return monthStart >= lookbackStart && monthStart < currentMonthStart;
-            })
-            .ToList();
+        List<Budget> budgets;
+        if (includesSharedGuestAccounts)
+        {
+            budgets = [];
+        }
+        else
+        {
+            budgets = (await dbContext.Budgets
+                .AsNoTracking()
+                .Where(x => x.UserId == userId)
+                .ToListAsync(cancellationToken))
+                .Where(x =>
+                {
+                    var monthStart = new DateTime(x.Year, x.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                    return monthStart >= lookbackStart && monthStart < currentMonthStart;
+                })
+                .ToList();
+        }
 
         var monthStarts = Enumerable.Range(0, LookbackMonths)
             .Select(offset => lookbackStart.AddMonths(offset))
@@ -73,7 +85,9 @@ public sealed class HealthScoreService(ApplicationDbContext dbContext, TimeProvi
 
         var savingsFactor = BuildSavingsRateFactor(totalIncome, totalExpense);
         var stabilityFactor = BuildExpenseStabilityFactor(monthlyExpenseTotals.Select(x => x.Expense).ToList());
-        var budgetFactor = BuildBudgetAdherenceFactor(totalExpense, budgetedExpenseByMonthCategory, actualExpenseByMonthCategory);
+        var budgetFactor = includesSharedGuestAccounts
+            ? new FactorComputation("budget-adherence", "Budget adherence", 60, BudgetWeight, 0m, "Shared-account activity is included in this scope, so budget adherence stays neutral until budgets are fully collaborative.", true)
+            : BuildBudgetAdherenceFactor(totalExpense, budgetedExpenseByMonthCategory, actualExpenseByMonthCategory);
         var bufferFactor = BuildCashBufferFactor(currentBalance, monthlyExpenseTotals.Select(x => x.Expense).ToList());
 
         var factors = new[] { savingsFactor, stabilityFactor, budgetFactor, bufferFactor }
@@ -96,6 +110,38 @@ public sealed class HealthScoreService(ApplicationDbContext dbContext, TimeProvi
             summary,
             factors,
             suggestions);
+    }
+
+    private static IReadOnlyCollection<Guid> ResolveRequestedAccountIds(HealthScoreQuery query)
+    {
+        if (query.AccountIds is { Length: > 0 })
+        {
+            return query.AccountIds.Distinct().ToArray();
+        }
+
+        return query.AccountId.HasValue ? [query.AccountId.Value] : [];
+    }
+
+    private async Task<List<Account>> ResolveScopedAccountsAsync(Guid userId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
+    {
+        if (accountIds.Count == 0)
+        {
+            return await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+
+        var accessibleAccounts = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
+            .AsNoTracking()
+            .Where(x => accountIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+
+        if (accessibleAccounts.Count != accountIds.Count)
+        {
+            throw new NotFoundException("One or more accounts were not found.");
+        }
+
+        return accessibleAccounts;
     }
 
     private static FactorComputation BuildSavingsRateFactor(decimal totalIncome, decimal totalExpense)
@@ -302,3 +348,4 @@ internal static class DecimalMath
 
     public static decimal Square(decimal value) => value * value;
 }
+

@@ -1,4 +1,4 @@
-﻿import { apiClient, downloadFile } from "../../../shared/lib/api/client";
+import { apiClient, downloadFile } from "../../../shared/lib/api/client";
 
 export type TransactionDto = {
   id: string;
@@ -16,6 +16,10 @@ export type TransactionDto = {
   paymentMethod?: string | null;
   recurringTransactionId?: string | null;
   tags: string[];
+  createdByUserId: string;
+  createdByDisplayName: string;
+  updatedByUserId: string;
+  updatedByDisplayName: string;
   createdUtc: string;
   updatedUtc: string;
 };
@@ -48,6 +52,7 @@ export type TransactionQuery = {
   endDateUtc?: string;
   categoryId?: string;
   accountId?: string;
+  accountIds?: string[];
   type?: string;
   minAmount?: string;
   maxAmount?: string;
@@ -59,6 +64,15 @@ export function toSearchParams(query: TransactionQuery) {
 
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null || value === "") {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) {
+          params.append(key, item);
+        }
+      }
       continue;
     }
 

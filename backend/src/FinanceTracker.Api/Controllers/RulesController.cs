@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using FinanceTracker.Application.Auth.Interfaces;
 using FinanceTracker.Application.Rules.DTOs;
 using FinanceTracker.Application.Rules.Interfaces;
@@ -10,7 +10,7 @@ namespace FinanceTracker.Api.Controllers;
 
 [ApiController]
 [Authorize]
-[EnableRateLimiting("AuthSession")]
+[EnableRateLimiting("WorkspaceUi")]
 [Route("api/rules")]
 public sealed class RulesController(
     IRuleService ruleService,
@@ -69,5 +69,6 @@ public sealed class RulesController(
         return ValidationProblem(ModelState);
     }
 }
+
 
 

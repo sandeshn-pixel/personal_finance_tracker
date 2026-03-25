@@ -7,13 +7,15 @@ public sealed record CategorySpendDto(Guid CategoryId, string CategoryName, deci
 public sealed record TrendPointDto(string Label, decimal Income, decimal Expense);
 public sealed record AccountBalanceSliceDto(Guid AccountId, string AccountName, string AccountType, string CurrencyCode, decimal CurrentBalance);
 public sealed record GoalProgressDto(Guid GoalId, string GoalName, string? Icon, string? Color, decimal CurrentAmount, decimal TargetAmount, decimal ProgressPercent, string? LinkedAccountName, DateTime? TargetDateUtc, GoalStatus Status);
-public sealed record BudgetUsageItemDto(Guid BudgetId, Guid CategoryId, string CategoryName, decimal Budgeted, decimal Spent, decimal Remaining, decimal UsagePercent, bool IsOverBudget, bool IsThresholdReached);
+public sealed record BudgetUsageItemDto(Guid BudgetId, Guid CategoryId, string CategoryName, decimal Budgeted, decimal Spent, decimal Remaining, decimal UsagePercent, bool IsOverBudget, bool IsThresholdReached, bool CanManage, string OwnerDisplayName);
 public sealed record BudgetHealthDto(
     decimal TotalBudgeted,
     decimal TotalSpent,
     decimal TotalRemaining,
     int OverBudgetCount,
-    int ThresholdReachedCount);
+    int ThresholdReachedCount,
+    int SharedReadOnlyBudgetCount,
+    int SharedOwnerCount);
 public sealed record SavingsAutomationSummaryDto(
     decimal TotalContributedToGoals,
     decimal TotalWithdrawnFromGoals,

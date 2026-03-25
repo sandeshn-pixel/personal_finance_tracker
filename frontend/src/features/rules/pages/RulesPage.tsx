@@ -1,9 +1,9 @@
-﻿
 import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
+import { useWorkspaceScope } from "../../../app/providers/WorkspaceScopeProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
 import { categoriesApi, type CategoryDto } from "../../categories/api/categoriesApi";
 import { rulesApi, type RuleActionType, type RuleConditionField, type RuleConditionOperator, type TransactionRuleDto } from "../api/rulesApi";
@@ -16,6 +16,7 @@ import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { SelectField } from "../../../shared/components/SelectField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { formatDate } from "../../../shared/lib/format";
+import { filterAccountsForView, hasSharedGuestAccounts } from "../../../shared/lib/sharedAccessView";
 
 const conditionFieldValues = ["Merchant", "Amount", "Category", "TransactionType", "Account"] as const;
 const conditionOperatorValues = ["Equals", "Contains", "GreaterThan", "LessThan"] as const;
@@ -122,11 +123,13 @@ const fieldOperatorOptions: Record<RuleConditionField, RuleConditionOperator[]> 
 
 export function RulesPage() {
   const { accessToken } = useAuth();
+  const { sharedAccessView } = useWorkspaceScope();
   const [rules, setRules] = useState<TransactionRuleDto[]>([]);
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
   const [editing, setEditing] = useState<TransactionRuleDto | null>(null);
 
   const { register, watch, handleSubmit, reset, formState: { errors, isSubmitting }, setError } = useForm<RuleFormValues>({
@@ -158,13 +161,42 @@ export function RulesPage() {
       setRules(rulesResponse);
       setAccounts(accountsResponse.filter((item) => !item.isArchived));
       setCategories(categoriesResponse.filter((item) => !item.isArchived));
+      setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to load rules.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Rules loaded too quickly for the current session limit. Please wait a moment and try again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to load rules.");
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  const showSharedViewToggle = useMemo(() => hasSharedGuestAccounts(accounts), [accounts]);
+  const scopedAccounts = useMemo(() => filterAccountsForView(accounts, sharedAccessView), [accounts, sharedAccessView]);
+  const scopedAccountIds = useMemo(() => new Set(scopedAccounts.map((account) => account.id)), [scopedAccounts]);
+  const visibleRules = useMemo(() => rules.filter((rule) => rule.condition.field !== "Account" || !rule.condition.accountId || scopedAccountIds.has(rule.condition.accountId)), [rules, scopedAccountIds]);
+  const scopeMessage = useMemo(() => {
+    if (sharedAccessView === "mine" && showSharedViewToggle) {
+      return "Rules are focused on your own account space. Account-specific rules targeting shared accounts are hidden in this view.";
+    }
+
+    if (sharedAccessView === "shared" && showSharedViewToggle) {
+      return "Rules are focused on accounts shared with you. Account-specific rules for your own accounts are hidden in this view.";
+    }
+
+    return "Rules run when a new transaction is created. Existing transactions are never reprocessed, and edits do not re-run rules in this version.";
+  }, [sharedAccessView, showSharedViewToggle]);
+
+  useEffect(() => {
+    if (formValues.conditionField === "Account" && formValues.conditionAccountId && !scopedAccountIds.has(formValues.conditionAccountId)) {
+      reset({ ...formValues, conditionAccountId: "" });
+    }
+  }, [formValues, reset, scopedAccountIds]);
 
   function resetForm() {
     setEditing(null);
@@ -173,6 +205,12 @@ export function RulesPage() {
   }
 
   function editRule(rule: TransactionRuleDto) {
+    if (rule.condition.field === "Account" && rule.condition.accountId && !scopedAccountIds.has(rule.condition.accountId)) {
+      setErrorVariant("info");
+      setErrorMessage("That rule targets an account outside the current workspace scope. Switch the scope to edit it.");
+      return;
+    }
+
     setEditing(rule);
     reset({
       name: rule.name,
@@ -239,12 +277,18 @@ export function RulesPage() {
           }
         });
       }
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to save rule.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("You are saving rules too quickly. Please wait a moment before trying again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to save rule.");
+      }
     }
   }
 
   async function deleteRule(ruleId: string) {
-    if (!accessToken || !window.confirm("Delete this rule? It will stop applying to new transactions immediately.")) {
+    if (!accessToken || !window.confirm("Delete this rule?")) {
       return;
     }
 
@@ -255,13 +299,16 @@ export function RulesPage() {
       }
       await bootstrap();
     } catch (error) {
+      setErrorVariant("error");
       setErrorMessage(error instanceof ApiError ? error.message : "Unable to delete rule.");
     }
   }
 
-  const rulePreview = useMemo(() => buildRulePreview({ values: formValues, categories, accounts }), [formValues, categories, accounts]);
+  const rulePreview = useMemo(() => buildRulePreview({ values: formValues, categories, accounts: scopedAccounts }), [formValues, categories, scopedAccounts]);
 
-  if (loading) return <PageLoader label="Loading rules" />;
+  if (loading) {
+    return <PageLoader label="Loading rules" />;
+  }
 
   return (
     <div className="page-stack">
@@ -270,15 +317,21 @@ export function RulesPage() {
         description="Define calm, explicit automations that classify new transactions, add tags, or raise alerts when a condition matches."
         action={<Button type="button" onClick={resetForm}>New rule</Button>}
       />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
-      <Alert message="Rules apply to newly created transactions only in this version. Existing transactions and later edits are not re-evaluated." />
+      {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
+      <div className="page-context-row">
+        <div className="rules-preview">
+          <strong>Rule scope</strong>
+          <p>{scopeMessage}</p>
+        </div>
+      </div>
 
-      <div className="transactions-layout">
+      <div className="rules-layout">
         <section className="panel-card panel-card--form">
           <div className="panel-card__header">
             <h3>{editing ? "Edit rule" : "Create rule"}</h3>
-            <p>Rules run only when a brand new transaction is created. They do not reprocess older transactions or edits, and they never move money or rewrite history.</p>
+            <p>Rules run when a new transaction is created. They never move money or rewrite old transactions.</p>
           </div>
+
           <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
             <div className="field-grid">
               <Field label="Rule name" error={errors.name?.message}>
@@ -291,7 +344,7 @@ export function RulesPage() {
 
             <Field label="Rule status">
               <label className="checkbox-field">
-                <input type="checkbox" {...register("isActive")} />
+                <input {...register("isActive")} type="checkbox" />
                 <span>Rule is enabled</span>
               </label>
             </Field>
@@ -340,7 +393,7 @@ export function RulesPage() {
                 <Field label="Account" error={errors.conditionAccountId?.message}>
                   <SelectField {...register("conditionAccountId")}>
                     <option value="">Select account</option>
-                    {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    {scopedAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                   </SelectField>
                 </Field>
               ) : null}
@@ -408,16 +461,16 @@ export function RulesPage() {
         <section className="panel-card">
           <div className="panel-card__header">
             <h3>Active rule set</h3>
-            <p>{rules.length} rule{rules.length === 1 ? "" : "s"} defined. Lower priority numbers run first.</p>
+            <p>{visibleRules.length} rule{visibleRules.length === 1 ? "" : "s"} visible in the current scope. Lower priority numbers run first.</p>
           </div>
-          {rules.length === 0 ? (
+          {visibleRules.length === 0 ? (
             <EmptyState
-              title="No rules yet"
-              description="Create your first rule to auto-categorize new transactions, add tags, or raise alerts when a condition matches."
+              title="No rules in this view"
+              description="Switch workspace scope or create a new rule to auto-categorize transactions, add tags, or raise alerts when a condition matches."
             />
           ) : (
             <div className="rules-list">
-              {rules.map((rule) => (
+              {visibleRules.map((rule) => (
                 <article key={rule.id} className="rule-row">
                   <div className="rule-row__top">
                     <div>
@@ -516,9 +569,5 @@ function mapApiFieldToFormField(field: string): keyof RuleFormValues | null {
   if (normalized.includes("actionalertmessage") || normalized.includes("action.alertmessage")) return "actionAlertMessage";
   return null;
 }
-
-
-
-
 
 

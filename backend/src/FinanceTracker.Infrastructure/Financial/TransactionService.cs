@@ -13,6 +13,7 @@ namespace FinanceTracker.Infrastructure.Financial;
 public sealed class TransactionService(
     ApplicationDbContext dbContext,
     ICategorySeeder categorySeeder,
+    AccountAccessService accountAccessService,
     ITransactionRuleEvaluator? transactionRuleEvaluator = null) : ITransactionService
 {
     public async Task<PagedResult<TransactionDto>> ListAsync(Guid userId, TransactionListQuery query, CancellationToken cancellationToken)
@@ -24,6 +25,8 @@ public sealed class TransactionService(
             .Include(x => x.TransferAccount)
             .Include(x => x.Category)
             .Include(x => x.Tags)
+            .Include(x => x.CreatedByUser)
+            .Include(x => x.UpdatedByUser)
             .AsQueryable();
 
         var totalCount = await transactions.CountAsync(cancellationToken);
@@ -42,11 +45,14 @@ public sealed class TransactionService(
     {
         return await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Id == transactionId && !x.IsDeleted)
+            .WhereUserCanView(userId)
+            .Where(x => x.Id == transactionId)
             .Include(x => x.Account)
             .Include(x => x.TransferAccount)
             .Include(x => x.Category)
             .Include(x => x.Tags)
+            .Include(x => x.CreatedByUser)
+            .Include(x => x.UpdatedByUser)
             .ProjectToDto()
             .SingleOrDefaultAsync(cancellationToken);
     }
@@ -74,7 +80,9 @@ public sealed class TransactionService(
             Note = evaluated.Request.Note?.Trim(),
             Merchant = evaluated.Request.Merchant?.Trim(),
             PaymentMethod = evaluated.Request.PaymentMethod?.Trim(),
-            RecurringTransactionId = evaluated.Request.RecurringTransactionId
+            RecurringTransactionId = evaluated.Request.RecurringTransactionId,
+            CreatedByUserId = userId,
+            UpdatedByUserId = userId
         };
 
         TransactionMapping.ApplyImpact(transaction.Type, transaction.Amount, resolved.SourceAccount, resolved.TransferAccount);
@@ -100,12 +108,15 @@ public sealed class TransactionService(
 
         var existing = await dbContext.Transactions
             .Include(x => x.Tags)
-            .SingleOrDefaultAsync(x => x.UserId == userId && x.Id == transactionId && !x.IsDeleted, cancellationToken)
+            .WhereUserCanView(userId)
+            .SingleOrDefaultAsync(x => x.Id == transactionId, cancellationToken)
             ?? throw new NotFoundException("Transaction was not found.");
 
-        var oldSource = await dbContext.Accounts.SingleAsync(x => x.UserId == userId && x.Id == existing.AccountId, cancellationToken);
+        var oldSource = await accountAccessService.FindAccessibleAccountAsync(userId, existing.AccountId, AccountMemberRole.Editor, includeArchived: true, cancellationToken)
+            ?? throw new ForbiddenException("You do not have permission to change this transaction.");
         var oldTransfer = existing.TransferAccountId.HasValue
-            ? await dbContext.Accounts.SingleAsync(x => x.UserId == userId && x.Id == existing.TransferAccountId.Value, cancellationToken)
+            ? await accountAccessService.FindAccessibleAccountAsync(userId, existing.TransferAccountId.Value, AccountMemberRole.Editor, includeArchived: true, cancellationToken)
+                ?? throw new ForbiddenException("You do not have permission to change this transaction.")
             : null;
 
         TransactionMapping.ReverseImpact(existing, oldSource, oldTransfer);
@@ -122,6 +133,7 @@ public sealed class TransactionService(
         existing.Merchant = request.Merchant?.Trim();
         existing.PaymentMethod = request.PaymentMethod?.Trim();
         existing.RecurringTransactionId = request.RecurringTransactionId;
+        existing.UpdatedByUserId = userId;
 
         TransactionMapping.ApplyImpact(existing.Type, existing.Amount, resolved.SourceAccount, resolved.TransferAccount);
 
@@ -140,24 +152,28 @@ public sealed class TransactionService(
 
         var transaction = await dbContext.Transactions
             .Include(x => x.Tags)
-            .SingleOrDefaultAsync(x => x.UserId == userId && x.Id == transactionId && !x.IsDeleted, cancellationToken)
+            .WhereUserCanView(userId)
+            .SingleOrDefaultAsync(x => x.Id == transactionId, cancellationToken)
             ?? throw new NotFoundException("Transaction was not found.");
 
-        var source = await dbContext.Accounts.SingleAsync(x => x.UserId == userId && x.Id == transaction.AccountId, cancellationToken);
+        var source = await accountAccessService.FindAccessibleAccountAsync(userId, transaction.AccountId, AccountMemberRole.Editor, includeArchived: true, cancellationToken)
+            ?? throw new ForbiddenException("You do not have permission to delete this transaction.");
         var transfer = transaction.TransferAccountId.HasValue
-            ? await dbContext.Accounts.SingleAsync(x => x.UserId == userId && x.Id == transaction.TransferAccountId.Value, cancellationToken)
+            ? await accountAccessService.FindAccessibleAccountAsync(userId, transaction.TransferAccountId.Value, AccountMemberRole.Editor, includeArchived: true, cancellationToken)
+                ?? throw new ForbiddenException("You do not have permission to delete this transaction.")
             : null;
 
         TransactionMapping.ReverseImpact(transaction, source, transfer);
         transaction.IsDeleted = true;
+        transaction.UpdatedByUserId = userId;
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
     }
 
     private async Task<(Account SourceAccount, Account? TransferAccount, Category? Category)> ResolveReferencesAsync(Guid userId, UpsertTransactionRequest request, CancellationToken cancellationToken)
     {
-        var sourceAccount = await dbContext.Accounts.SingleOrDefaultAsync(x => x.UserId == userId && x.Id == request.AccountId && !x.IsArchived, cancellationToken)
-            ?? throw new ValidationException("Selected source account is invalid or archived.");
+        var sourceAccount = await accountAccessService.FindAccessibleAccountAsync(userId, request.AccountId, AccountMemberRole.Editor, includeArchived: false, cancellationToken)
+            ?? throw new ValidationException("Selected source account is invalid, inaccessible, or archived.");
 
         Account? transferAccount = null;
         Category? category = null;
@@ -174,8 +190,8 @@ public sealed class TransactionService(
                 throw new ValidationException("Transfer source and destination accounts must be different.");
             }
 
-            transferAccount = await dbContext.Accounts.SingleOrDefaultAsync(x => x.UserId == userId && x.Id == request.TransferAccountId.Value && !x.IsArchived, cancellationToken)
-                ?? throw new ValidationException("Selected destination account is invalid or archived.");
+            transferAccount = await accountAccessService.FindAccessibleAccountAsync(userId, request.TransferAccountId.Value, AccountMemberRole.Editor, includeArchived: false, cancellationToken)
+                ?? throw new ValidationException("Selected destination account is invalid, inaccessible, or archived.");
 
             if (request.CategoryId.HasValue)
             {

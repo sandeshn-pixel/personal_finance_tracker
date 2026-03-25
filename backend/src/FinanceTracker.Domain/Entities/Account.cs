@@ -17,6 +17,8 @@ public sealed class Account : AuditableEntity
     public bool IsArchived { get; set; }
 
     public User User { get; set; } = null!;
+    public ICollection<AccountMembership> Memberships { get; set; } = new List<AccountMembership>();
+    public ICollection<AccountInvite> Invites { get; set; } = new List<AccountInvite>();
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<Transaction> TransferTransactions { get; set; } = new List<Transaction>();
     public ICollection<Goal> Goals { get; set; } = new List<Goal>();

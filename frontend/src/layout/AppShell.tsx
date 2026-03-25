@@ -1,9 +1,13 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/providers/AuthProvider";
+import { useWorkspaceScope } from "../app/providers/WorkspaceScopeProvider";
+import { accountsApi } from "../features/accounts/api/accountsApi";
 import { notificationsApi, type NotificationDto, type NotificationFeedDto } from "../features/notifications/api/notificationsApi";
 import { ApiError } from "../shared/lib/api/client";
 import { formatDate } from "../shared/lib/format";
+import { hasSharedGuestAccounts } from "../shared/lib/sharedAccessView";
+import { WorkspaceScopeSelect } from "../shared/components/WorkspaceScopeSelect";
 
 const navigationItems = [
   { to: "/dashboard", label: "Dashboard" },
@@ -24,11 +28,15 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, accessToken, logout } = useAuth();
+  const { sharedAccessView, setSharedAccessView } = useWorkspaceScope();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notificationFeed, setNotificationFeed] = useState<NotificationFeedDto>({ unreadCount: 0, items: [] });
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [ownedPendingInviteCount, setOwnedPendingInviteCount] = useState(0);
+  const [firstPendingInviteAccountId, setFirstPendingInviteAccountId] = useState<string | null>(null);
+  const [workspaceAccounts, setWorkspaceAccounts] = useState<Array<{ id: string; pendingInviteCount: number; isShared: boolean; currentUserRole: string }>>([]);
   const initials = [user?.firstName?.charAt(0) ?? "", user?.lastName?.charAt(0) ?? ""].join("").toUpperCase();
 
   useEffect(() => {
@@ -39,6 +47,9 @@ export function AppShell() {
   useEffect(() => {
     if (!accessToken) {
       setNotificationFeed({ unreadCount: 0, items: [] });
+      setOwnedPendingInviteCount(0);
+      setWorkspaceAccounts([]);
+      setFirstPendingInviteAccountId(null);
       return;
     }
 
@@ -49,14 +60,26 @@ export function AppShell() {
     async function loadNotifications() {
       setLoadingNotifications(true);
       try {
-        const feed = await notificationsApi.list(token, false, 8);
+        const [feedResult, accountsResult] = await Promise.allSettled([
+          notificationsApi.list(token, false, 8),
+          accountsApi.list(token),
+        ]);
+
         if (!cancelled) {
-          setNotificationFeed(feed);
-          setNotificationError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+          if (feedResult.status === "fulfilled") {
+            setNotificationFeed(feedResult.value);
+            setNotificationError(null);
+          } else {
+            const error = feedResult.reason;
+            setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+          }
+
+          if (accountsResult.status === "fulfilled") {
+            const accounts = accountsResult.value;
+            setWorkspaceAccounts(accounts);
+            setOwnedPendingInviteCount(accounts.reduce((sum, item) => sum + item.pendingInviteCount, 0));
+            setFirstPendingInviteAccountId(accounts.find((item) => item.pendingInviteCount > 0)?.id ?? null);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -89,11 +112,25 @@ export function AppShell() {
     if (!isNotificationsOpen) {
       setLoadingNotifications(true);
       try {
-        const feed = await notificationsApi.list(accessToken, false, 8);
-        setNotificationFeed(feed);
-        setNotificationError(null);
-      } catch (error) {
-        setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+        const [feedResult, accountsResult] = await Promise.allSettled([
+          notificationsApi.list(accessToken, false, 8),
+          accountsApi.list(accessToken),
+        ]);
+
+        if (feedResult.status === "fulfilled") {
+          setNotificationFeed(feedResult.value);
+          setNotificationError(null);
+        } else {
+          const error = feedResult.reason;
+          setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+        }
+
+        if (accountsResult.status === "fulfilled") {
+          const accounts = accountsResult.value;
+          setWorkspaceAccounts(accounts);
+          setOwnedPendingInviteCount(accounts.reduce((sum, item) => sum + item.pendingInviteCount, 0));
+          setFirstPendingInviteAccountId(accounts.find((item) => item.pendingInviteCount > 0)?.id ?? null);
+        }
       } finally {
         setLoadingNotifications(false);
       }
@@ -133,6 +170,14 @@ export function AppShell() {
     }
   }
 
+  const showWorkspaceScopeToggle = hasSharedGuestAccounts(workspaceAccounts);
+
+  useEffect(() => {
+    if (!showWorkspaceScopeToggle && sharedAccessView !== "all") {
+      setSharedAccessView("all");
+    }
+  }, [setSharedAccessView, sharedAccessView, showWorkspaceScopeToggle]);
+
   return (
     <div className={`shell-layout${isSidebarOpen ? " shell-layout--nav-open" : ""}`}>
       <button
@@ -167,8 +212,25 @@ export function AppShell() {
             </div>
           </div>
           <div className="topbar-actions">
+            {showWorkspaceScopeToggle ? (
+              <div className="topbar-scope-wrap">
+                <WorkspaceScopeSelect
+                  value={sharedAccessView}
+                  onChange={setSharedAccessView}
+                  className="topbar-scope-toggle"
+                  label="Workspace"
+                />
+              </div>
+            ) : null}
             <div className="notification-shell">
-              <button type="button" className="notification-button" onClick={() => void toggleNotifications()} aria-haspopup="dialog" aria-expanded={isNotificationsOpen} aria-label="Open notifications">
+              <button
+                type="button"
+                className={`notification-button${ownedPendingInviteCount > 0 ? " notification-button--attention" : ""}`}
+                onClick={() => void toggleNotifications()}
+                aria-haspopup="dialog"
+                aria-expanded={isNotificationsOpen}
+                aria-label="Open notifications"
+              >
                 <span aria-hidden="true">Alerts</span>
                 {notificationFeed.unreadCount > 0 ? <span className="notification-count">{notificationFeed.unreadCount}</span> : null}
               </button>
@@ -181,6 +243,13 @@ export function AppShell() {
                     </div>
                     <button type="button" className="ghost-button ghost-button--small" onClick={() => void markAllNotificationsRead()} disabled={notificationFeed.unreadCount === 0}>Mark all read</button>
                   </div>
+                  {ownedPendingInviteCount > 0 ? (
+                    <div className="notification-panel__summary">
+                      <strong>Sharing actions waiting</strong>
+                      <p>You have {ownedPendingInviteCount} pending shared-account invite{ownedPendingInviteCount === 1 ? "" : "s"} across your owned accounts.</p>
+                      <button type="button" className="ghost-button ghost-button--small" onClick={() => { setIsNotificationsOpen(false); navigate(firstPendingInviteAccountId ? `/accounts/${firstPendingInviteAccountId}#sharing` : "/accounts"); }}>Review sharing</button>
+                    </div>
+                  ) : null}
                   <div className="notification-panel__actions">
                     <button type="button" className="ghost-button ghost-button--small" onClick={() => { setIsNotificationsOpen(false); navigate("/notifications"); }}>View all</button>
                   </div>
@@ -212,3 +281,7 @@ export function AppShell() {
     </div>
   );
 }
+
+
+
+

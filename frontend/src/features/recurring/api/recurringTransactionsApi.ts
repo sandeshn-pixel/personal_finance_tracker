@@ -21,6 +21,7 @@ export type RecurringTransactionDto = {
   nextRunDateUtc?: string | null;
   autoCreateTransaction: boolean;
   status: RecurringRuleStatus;
+  canManage: boolean;
   createdUtc: string;
   updatedUtc: string;
   lastProcessedAtUtc?: string | null;

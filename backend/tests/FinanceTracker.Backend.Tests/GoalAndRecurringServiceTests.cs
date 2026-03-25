@@ -2,6 +2,7 @@ using FinanceTracker.Application.Automation.DTOs;
 using FinanceTracker.Application.Goals.DTOs;
 using FinanceTracker.Application.Notifications.Interfaces;
 using FinanceTracker.Application.RecurringTransactions.DTOs;
+using FinanceTracker.Domain.Entities;
 using FinanceTracker.Domain.Enums;
 using FinanceTracker.Infrastructure.Automation;
 using FinanceTracker.Infrastructure.Financial;
@@ -25,7 +26,7 @@ public sealed class GoalAndRecurringServiceTests
         await dbContext.SaveChangesAsync();
 
         INotificationService notificationService = new NotificationService(dbContext);
-        var service = new GoalService(dbContext, notificationService);
+        var service = CreateGoalService(dbContext, notificationService);
         var goal = await service.CreateAsync(user.Id, new CreateGoalRequest
         {
             Name = "Emergency Fund",
@@ -48,6 +49,42 @@ public sealed class GoalAndRecurringServiceTests
     }
 
     [Fact]
+    public async Task GoalService_ListAsync_IncludesSharedViewerLinkedGoals_ReadOnly()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var owner = TestData.AddUser(dbContext, "owner@example.com");
+        var viewer = TestData.AddUser(dbContext, "viewer@example.com");
+        var account = TestData.AddAccount(dbContext, owner.Id, "Shared Savings", 1200m, AccountType.SavingsAccount);
+        dbContext.AccountMemberships.Add(new AccountMembership
+        {
+            AccountId = account.Id,
+            UserId = viewer.Id,
+            Role = AccountMemberRole.Viewer,
+            InvitedByUserId = owner.Id,
+            LastModifiedByUserId = owner.Id
+        });
+        await dbContext.SaveChangesAsync();
+
+        INotificationService notificationService = new NotificationService(dbContext);
+        var service = CreateGoalService(dbContext, notificationService);
+        await service.CreateAsync(owner.Id, new CreateGoalRequest
+        {
+            Name = "Family Vacation",
+            TargetAmount = 5000m,
+            LinkedAccountId = account.Id,
+            Icon = "Plane",
+            Color = "#C08552"
+        }, CancellationToken.None);
+
+        var goals = await service.ListAsync(viewer.Id, CancellationToken.None);
+
+        var sharedGoal = Assert.Single(goals);
+        Assert.Equal("Family Vacation", sharedGoal.Name);
+        Assert.Equal(account.Id, sharedGoal.LinkedAccountId);
+    }
+
+    [Fact]
     public async Task GoalCompletion_PublishesNotification()
     {
         await using var database = new SqliteTestDatabase();
@@ -56,7 +93,7 @@ public sealed class GoalAndRecurringServiceTests
         await dbContext.SaveChangesAsync();
 
         INotificationService notificationService = new NotificationService(dbContext);
-        var service = new GoalService(dbContext, notificationService);
+        var service = CreateGoalService(dbContext, notificationService);
         var goal = await service.CreateAsync(user.Id, new CreateGoalRequest
         {
             Name = "Laptop Fund",
@@ -101,6 +138,46 @@ public sealed class GoalAndRecurringServiceTests
         Assert.Equal(0, secondRun.TransactionsCreated);
         Assert.Equal(1, await dbContext.Transactions.CountAsync(x => x.RecurringTransactionId != null));
         Assert.Equal(1, await dbContext.RecurringTransactionExecutions.CountAsync());
+    }
+
+    [Fact]
+    public async Task RecurringTransactionService_ListAsync_IncludesSharedViewerLinkedRules_ReadOnly()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var owner = TestData.AddUser(dbContext, "owner@example.com");
+        var viewer = TestData.AddUser(dbContext, "viewer@example.com");
+        var account = TestData.AddAccount(dbContext, owner.Id, "Shared Checking", 2200m);
+        var category = TestData.AddCategory(dbContext, owner.Id, "Rent", CategoryType.Expense);
+        dbContext.AccountMemberships.Add(new AccountMembership
+        {
+            AccountId = account.Id,
+            UserId = viewer.Id,
+            Role = AccountMemberRole.Viewer,
+            InvitedByUserId = owner.Id,
+            LastModifiedByUserId = owner.Id
+        });
+        await dbContext.SaveChangesAsync();
+
+        INotificationService notificationService = new NotificationService(dbContext);
+        var recurringService = CreateRecurringService(dbContext, notificationService);
+        await recurringService.CreateAsync(owner.Id, new CreateRecurringTransactionRequest
+        {
+            Title = "Shared rent",
+            Type = TransactionType.Expense,
+            Amount = 900m,
+            CategoryId = category.Id,
+            AccountId = account.Id,
+            Frequency = RecurringFrequency.Monthly,
+            StartDateUtc = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
+            AutoCreateTransaction = false
+        }, CancellationToken.None);
+
+        var rules = await recurringService.ListAsync(viewer.Id, CancellationToken.None);
+
+        var sharedRule = Assert.Single(rules);
+        Assert.Equal("Shared rent", sharedRule.Title);
+        Assert.Equal(account.Id, sharedRule.AccountId);
     }
 
     [Fact]
@@ -245,13 +322,18 @@ public sealed class GoalAndRecurringServiceTests
         Assert.Equal(1, snapshot.LastSummary!.AutoOccurrencesDeferredForRetry);
     }
 
+    private static GoalService CreateGoalService(
+        FinanceTracker.Infrastructure.Persistence.ApplicationDbContext dbContext,
+        INotificationService notificationService)
+        => new(dbContext, notificationService, new AccountAccessService(dbContext));
+
     private static RecurringTransactionService CreateRecurringService(
         FinanceTracker.Infrastructure.Persistence.ApplicationDbContext dbContext,
         INotificationService notificationService,
         AutomationOptions? options = null)
         => new(
             dbContext,
-            new TransactionService(dbContext, new CategorySeeder(dbContext)),
+            new TransactionService(dbContext, new CategorySeeder(dbContext), new AccountAccessService(dbContext)),
             notificationService,
             Options.Create(options ?? new AutomationOptions
             {
@@ -260,7 +342,6 @@ public sealed class GoalAndRecurringServiceTests
                 MaxRecurringRetryAttempts = 3,
                 InitialRetryDelaySeconds = 60,
                 MaxRetryDelaySeconds = 900
-            }));
+            }),
+            new AccountAccessService(dbContext));
 }
-
-

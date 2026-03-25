@@ -1,6 +1,6 @@
-﻿import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "../../../shared/lib/api/client";
 
-export type NotificationType = "RecurringDueReminder" | "RecurringExecutionFailed" | "GoalTargetApproaching" | "GoalCompleted" | "RuleTriggeredAlert";
+export type NotificationType = "RecurringDueReminder" | "RecurringExecutionFailed" | "GoalTargetApproaching" | "GoalCompleted" | "RuleTriggeredAlert" | "SharedAccountInvite";
 export type NotificationLevel = "Info" | "Success" | "Warning";
 
 export type NotificationDto = {
@@ -25,4 +25,3 @@ export const notificationsApi = {
   markRead: (accessToken: string, notificationId: string) => apiClient<void>(`/notifications/${notificationId}/read`, { method: "POST", accessToken }),
   markAllRead: (accessToken: string) => apiClient<void>("/notifications/read-all", { method: "POST", accessToken }),
 };
-

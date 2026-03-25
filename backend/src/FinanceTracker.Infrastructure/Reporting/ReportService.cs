@@ -3,12 +3,15 @@ using FinanceTracker.Application.Reports.DTOs;
 using FinanceTracker.Application.Reports.Interfaces;
 using FinanceTracker.Domain.Entities;
 using FinanceTracker.Domain.Enums;
+using FinanceTracker.Infrastructure.Financial;
 using FinanceTracker.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Reporting;
 
-public sealed class ReportService(ApplicationDbContext dbContext) : IReportService
+public sealed class ReportService(
+    ApplicationDbContext dbContext,
+    AccountAccessService accountAccessService) : IReportService
 {
     public async Task<ReportsOverviewDto> GetOverviewAsync(Guid userId, ReportQuery query, CancellationToken cancellationToken)
     {
@@ -17,20 +20,23 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
         var periodLength = endExclusive - start;
         var previousStart = start - periodLength;
 
-        var selectedAccounts = await LoadSelectedAccountsAsync(userId, query.AccountId, cancellationToken);
+        var selectedAccounts = await LoadSelectedAccountsAsync(userId, ResolveRequestedAccountIds(query), cancellationToken);
         var selectedAccountIds = selectedAccounts.Select(x => x.Id).ToHashSet();
+        var filterBySelectedAccounts = selectedAccountIds.Count > 0;
 
         var reportTransactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted && x.DateUtc >= start && x.DateUtc < endExclusive)
-            .Where(x => !query.AccountId.HasValue || x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value)
+            .WhereUserCanView(userId)
+            .Where(x => x.DateUtc >= start && x.DateUtc < endExclusive)
+            .Where(x => !filterBySelectedAccounts || selectedAccountIds.Contains(x.AccountId) || (x.TransferAccountId.HasValue && selectedAccountIds.Contains(x.TransferAccountId.Value)))
             .Include(x => x.Category)
             .ToListAsync(cancellationToken);
 
         var previousTransactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted && x.DateUtc >= previousStart && x.DateUtc < start)
-            .Where(x => !query.AccountId.HasValue || x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value)
+            .WhereUserCanView(userId)
+            .Where(x => x.DateUtc >= previousStart && x.DateUtc < start)
+            .Where(x => !filterBySelectedAccounts || selectedAccountIds.Contains(x.AccountId) || (x.TransferAccountId.HasValue && selectedAccountIds.Contains(x.TransferAccountId.Value)))
             .ToListAsync(cancellationToken);
 
         var summary = BuildSummary(reportTransactions);
@@ -70,8 +76,9 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
 
         var preRangeTransactions = await dbContext.Transactions
             .AsNoTracking()
-            .Where(x => x.UserId == userId && !x.IsDeleted && x.DateUtc < start)
-            .Where(x => !query.AccountId.HasValue || x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value)
+            .WhereUserCanView(userId)
+            .Where(x => x.DateUtc < start)
+            .Where(x => !filterBySelectedAccounts || selectedAccountIds.Contains(x.AccountId) || (x.TransferAccountId.HasValue && selectedAccountIds.Contains(x.TransferAccountId.Value)))
             .ToListAsync(cancellationToken);
 
         var startingBalance = selectedAccounts.Sum(x => x.OpeningBalance) + preRangeTransactions.Sum(x => CalculateImpact(x, selectedAccountIds));
@@ -89,6 +96,16 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
         }
 
         return new ReportsOverviewDto(summary, comparison, categorySpend, topMerchants, incomeExpenseTrend, accountBalanceTrend);
+    }
+
+    private static IReadOnlyCollection<Guid> ResolveRequestedAccountIds(ReportQuery query)
+    {
+        if (query.AccountIds is { Length: > 0 })
+        {
+            return query.AccountIds.Distinct().ToArray();
+        }
+
+        return query.AccountId.HasValue ? [query.AccountId.Value] : [];
     }
 
     private static ReportSummaryDto BuildSummary(IEnumerable<Transaction> transactions)
@@ -119,22 +136,26 @@ public sealed class ReportService(ApplicationDbContext dbContext) : IReportServi
             source.Count(x => x.Type == TransactionType.Income));
     }
 
-    private async Task<List<Account>> LoadSelectedAccountsAsync(Guid userId, Guid? accountId, CancellationToken cancellationToken)
+    private async Task<List<Account>> LoadSelectedAccountsAsync(Guid userId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken)
     {
-        if (!accountId.HasValue)
+        if (accountIds.Count == 0)
         {
-            return await dbContext.Accounts
+            return await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
                 .AsNoTracking()
-                .Where(x => x.UserId == userId)
                 .ToListAsync(cancellationToken);
         }
 
-        var account = await dbContext.Accounts
+        var accessibleAccounts = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: false)
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.UserId == userId && x.Id == accountId.Value, cancellationToken)
-            ?? throw new ValidationException("Selected account was not found.");
+            .Where(x => accountIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
 
-        return [account];
+        if (accessibleAccounts.Count != accountIds.Count)
+        {
+            throw new ValidationException("One or more selected accounts were not found.");
+        }
+
+        return accessibleAccounts;
     }
 
     private static decimal CalculateImpact(Transaction transaction, HashSet<Guid> selectedAccountIds)

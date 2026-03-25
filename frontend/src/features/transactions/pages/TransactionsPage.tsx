@@ -1,8 +1,9 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
+import { useWorkspaceScope } from "../../../app/providers/WorkspaceScopeProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
 import { categoriesApi, type CategoryDto } from "../../categories/api/categoriesApi";
 import { transactionsApi, type TransactionDto } from "../api/transactionsApi";
@@ -15,6 +16,7 @@ import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { SelectField } from "../../../shared/components/SelectField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { formatCurrency, formatDate, toDateInputValue } from "../../../shared/lib/format";
+import { filterAccountsForView, hasSharedGuestAccounts } from "../../../shared/lib/sharedAccessView";
 
 const transactionSchema = z.object({
   accountId: z.string().min(1, "Account is required."),
@@ -35,6 +37,7 @@ const commonPaymentMethods = ["UPI", "Debit Card", "Credit Card", "Cash", "Bank 
 
 export function TransactionsPage() {
   const { accessToken } = useAuth();
+  const { sharedAccessView: transactionView } = useWorkspaceScope();
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [transactions, setTransactions] = useState<TransactionDto[]>([]);
@@ -46,17 +49,20 @@ export function TransactionsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [paymentManual, setPaymentManual] = useState(false);
+  const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
   const [filters, setFilters] = useState({ search: "", type: "", accountId: "", categoryId: "", startDateUtc: "", endDateUtc: "" });
 
-  const { register, control, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<TransactionFormValues>({
+  const { register, control, handleSubmit, reset, watch, getValues, formState: { errors, isSubmitting } } = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
     defaultValues: { accountId: "", transferAccountId: "", type: "2", amount: 0, dateUtc: new Date().toISOString().slice(0, 10), categoryId: "", note: "", merchant: "", paymentMethod: "", tags: "" },
   });
 
   const type = watch("type");
+  const selectedAccountId = watch("accountId");
+  const selectedTransferAccountId = watch("transferAccountId");
 
   useEffect(() => { void bootstrap(); }, [accessToken]);
-  useEffect(() => { void loadTransactions(); }, [accessToken, page, filters]);
+  useEffect(() => { void loadTransactions(); }, [accessToken, page, filters, transactionView, accounts]);
 
   async function bootstrap() {
     if (!accessToken) return;
@@ -65,44 +71,123 @@ export function TransactionsPage() {
       const [accountsResponse, categoriesResponse] = await Promise.all([accountsApi.list(accessToken), categoriesApi.list(accessToken)]);
       setAccounts(accountsResponse.filter((item) => !item.isArchived));
       setCategories(categoriesResponse.filter((item) => !item.isArchived));
+      setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to load transaction dependencies.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Transactions are refreshing too quickly for the current session limit. Please wait a moment and try again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to load transaction dependencies.");
+      }
     } finally {
       setLoading(false);
     }
   }
 
+  const editableAccounts = useMemo(() => filterAccountsForView(accounts.filter((account) => account.currentUserRole !== "Viewer"), transactionView), [accounts, transactionView]);
+  const accountRoleById = useMemo(() => new Map(accounts.map((account) => [account.id, account.currentUserRole])), [accounts]);
+  const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const showSharedViewToggle = useMemo(() => hasSharedGuestAccounts(accounts), [accounts]);
+  const scopedHistoryAccounts = useMemo(() => filterAccountsForView(accounts, transactionView), [accounts, transactionView]);
+  const scopeHasAccounts = transactionView === "all" || scopedHistoryAccounts.length > 0;
+  const selectedSourceAccount = selectedAccountId ? accountById.get(selectedAccountId) ?? null : null;
+  const selectedTransferAccount = selectedTransferAccountId ? accountById.get(selectedTransferAccountId) ?? null : null;
+
+  useEffect(() => {
+    if (filters.accountId && !scopedHistoryAccounts.some((account) => account.id === filters.accountId)) {
+      setPage(1);
+      setFilters((current) => ({ ...current, accountId: "" }));
+    }
+  }, [filters.accountId, scopedHistoryAccounts]);
+
+  useEffect(() => {
+    if (selectedAccountId && !editableAccounts.some((account) => account.id === selectedAccountId)) {
+      reset({ ...getValues(), accountId: "" });
+    }
+  }, [editableAccounts, getValues, reset, selectedAccountId]);
+
+  useEffect(() => {
+    if (selectedTransferAccountId && !editableAccounts.some((account) => account.id === selectedTransferAccountId)) {
+      reset({ ...getValues(), transferAccountId: "" });
+    }
+  }, [editableAccounts, getValues, reset, selectedTransferAccountId]);
+
   async function loadTransactions() {
     if (!accessToken) return;
+
+    if (transactionView !== "all" && !filters.accountId && scopedHistoryAccounts.length === 0) {
+      setTransactions([]);
+      setTotalCount(0);
+      setErrorVariant("error");
+      setErrorMessage(null);
+      return;
+    }
+
     try {
       const response = await transactionsApi.list(accessToken, buildFilterQuery({ includePaging: true }));
       setTransactions(response.items);
       setTotalCount(response.totalCount);
+      setErrorVariant("error");
+      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to load transactions.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Transactions are being refreshed too quickly. Please wait a moment and try again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to load transactions.");
+      }
     }
   }
 
   function buildFilterQuery(options?: { includePaging?: boolean }) {
+    const scopedAccountIds = !filters.accountId && transactionView !== "all" ? scopedHistoryAccounts.map((account) => account.id) : [];
+
     return {
       ...(options?.includePaging ? { page, pageSize: 10 } : {}),
       ...(filters.search ? { search: filters.search } : {}),
       ...(filters.type ? { type: filters.type } : {}),
       ...(filters.accountId ? { accountId: filters.accountId } : {}),
+      ...(scopedAccountIds.length > 0 ? { accountIds: scopedAccountIds } : {}),
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
       ...(filters.startDateUtc ? { startDateUtc: new Date(filters.startDateUtc).toISOString() } : {}),
       ...(filters.endDateUtc ? { endDateUtc: new Date(filters.endDateUtc).toISOString() } : {}),
     };
   }
 
+  function accountLabel(account: AccountDto) {
+    return account.isShared ? `${account.name} | ${account.currentUserRole.toLowerCase()} access | Owner ${account.ownerDisplayName}` : account.name;
+  }
+
+  function canMutateTransaction(item: TransactionDto) {
+    const sourceRole = accountRoleById.get(item.accountId);
+    if (!sourceRole || sourceRole === "Viewer") {
+      return false;
+    }
+
+    if (!item.transferAccountId) {
+      return true;
+    }
+
+    const transferRole = accountRoleById.get(item.transferAccountId);
+    return Boolean(transferRole && transferRole !== "Viewer");
+  }
+
   function resetForm() {
     setEditing(null);
     setPaymentManual(false);
-    reset({ accountId: accounts[0]?.id ?? "", transferAccountId: "", type: "2", amount: 0, dateUtc: new Date().toISOString().slice(0, 10), categoryId: "", note: "", merchant: "", paymentMethod: "", tags: "" });
+    reset({ accountId: editableAccounts[0]?.id ?? "", transferAccountId: "", type: "2", amount: 0, dateUtc: new Date().toISOString().slice(0, 10), categoryId: "", note: "", merchant: "", paymentMethod: "", tags: "" });
   }
 
   function editTransaction(item: TransactionDto) {
+    if (!canMutateTransaction(item)) {
+      setErrorVariant("info");
+      setErrorMessage("You can view this shared transaction, but only an owner or editor on every affected account can change it.");
+      return;
+    }
+
     setEditing(item);
     setPaymentManual(Boolean(item.paymentMethod) && !paymentMethodOptions.includes(item.paymentMethod ?? ""));
     reset({
@@ -149,9 +234,16 @@ export function TransactionsPage() {
     }
   }
 
-  async function deleteTransaction(id: string) {
-    if (!accessToken || !window.confirm("Delete this transaction and reverse its balance effect?")) return;
-    await transactionsApi.remove(accessToken, id);
+  async function deleteTransaction(item: TransactionDto) {
+    if (!accessToken) return;
+    if (!canMutateTransaction(item)) {
+      setErrorVariant("info");
+      setErrorMessage("You can view this shared transaction, but only an owner or editor on every affected account can delete it.");
+      return;
+    }
+
+    if (!window.confirm("Delete this transaction and reverse its balance effect?")) return;
+    await transactionsApi.remove(accessToken, item.id);
     await Promise.all([bootstrap(), loadTransactions()]);
   }
 
@@ -193,15 +285,37 @@ export function TransactionsPage() {
           </div>
         }
       />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
-      {/* <Alert message="Active rules are applied only when you create a new transaction. Editing an existing transaction will not re-run rules in this version." /> */}
+      {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
       {exportMessage ? <p className="form-status" role="status" aria-live="polite">{exportMessage}</p> : null}
+      {showSharedViewToggle ? (
+        <div className="page-context-row">
+          <div className="rules-preview">
+            <strong>History scope</strong>
+            <p>{transactionView === "shared" ? "Showing only shared-account activity you can access." : transactionView === "mine" ? "Showing your private and owned shared accounts only." : "Showing all transaction activity you can access."}</p>
+          </div>
+        </div>
+      ) : null}
       <div className="transactions-layout">
         <section className="panel-card panel-card--form">
           <div className="panel-card__header">
             <h3>{editing ? "Edit transaction" : "Add transaction"}</h3>
             <p>{editing ? "Balance effects are reversed and recalculated on save." : "Transfers move value between two accounts in one operation."}</p>
+            {editableAccounts.some((account) => account.isShared) ? <small>Shared accounts are labeled with your role and the owner so you can confirm where this transaction will land before saving.</small> : null}
           </div>
+          {selectedSourceAccount?.isShared ? (
+            <div className="transaction-shared-context">
+              <strong>{type === "3" ? "Shared source account" : "Shared account selected"}</strong>
+              <p>{type === "3"
+                ? `You are moving money from ${selectedSourceAccount.name}. Your access is ${selectedSourceAccount.currentUserRole.toLowerCase()}, and the owner is ${selectedSourceAccount.ownerDisplayName}.`
+                : `You are posting into ${selectedSourceAccount.name}. Your access is ${selectedSourceAccount.currentUserRole.toLowerCase()}, and the owner is ${selectedSourceAccount.ownerDisplayName}.`}</p>
+            </div>
+          ) : null}
+          {type === "3" && selectedTransferAccount?.isShared ? (
+            <div className="transaction-shared-context">
+              <strong>Shared destination account</strong>
+              <p>{selectedTransferAccount.name} is also shared. Your access there is ${selectedTransferAccount.currentUserRole.toLowerCase()}, and the owner is ${selectedTransferAccount.ownerDisplayName}.</p>
+            </div>
+          ) : null}
           <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
             <div className="field-grid">
               <Field label="Type" error={errors.type?.message}>
@@ -217,14 +331,14 @@ export function TransactionsPage() {
               <Field label={type === "3" ? "Source account" : "Account"} error={errors.accountId?.message}>
                 <SelectField {...register("accountId")}>
                   <option value="">Select account</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {editableAccounts.map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}
                 </SelectField>
               </Field>
               {type === "3" ? (
                 <Field label="Destination account" error={errors.transferAccountId?.message}>
                   <SelectField {...register("transferAccountId")}>
                     <option value="">Select destination</option>
-                    {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    {editableAccounts.map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}
                   </SelectField>
                 </Field>
               ) : (
@@ -270,14 +384,17 @@ export function TransactionsPage() {
             <Field label="Tags" hint="Optional comma-separated labels for extra grouping." error={errors.tags?.message}>
               <input {...register("tags")} placeholder="office, team-lunch, reimbursable, Food, Travel, Salary" />
             </Field>
-            <Button type="submit" loading={isSubmitting}>{editing ? "Save transaction" : "Add transaction"}</Button>
+            <Button type="submit" loading={isSubmitting} disabled={editableAccounts.length === 0}>{editing ? "Save transaction" : "Add transaction"}</Button>
           </form>
         </section>
 
         <section className="panel-card">
-          <div className="panel-card__header">
-            <h3>History</h3>
-            <p>{totalCount} matching transactions</p>
+          <div className="panel-card__header panel-card__header--inline">
+            <div>
+              <h3>History</h3>
+              <p>{totalCount} matching transactions</p>
+            </div>
+            
           </div>
           <div className="filters-grid" aria-label="Transaction filters">
             <input value={filters.search} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, search: event.target.value })); }} placeholder="Search merchant or note" aria-label="Search merchant or note" />
@@ -288,8 +405,8 @@ export function TransactionsPage() {
               <option value="3">Transfer</option>
             </SelectField>
             <SelectField value={filters.accountId} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, accountId: event.target.value })); }} aria-label="Filter by account">
-              <option value="">All accounts</option>
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              <option value="">All accounts in this view</option>
+              {scopedHistoryAccounts.map((account) => <option key={account.id} value={account.id}>{accountLabel(account)}</option>)}
             </SelectField>
             <SelectField value={filters.categoryId} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, categoryId: event.target.value })); }} aria-label="Filter by category">
               <option value="">All categories</option>
@@ -299,26 +416,39 @@ export function TransactionsPage() {
             <input type="date" value={filters.endDateUtc} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, endDateUtc: event.target.value })); }} aria-label="Filter by end date" />
           </div>
           {transactions.length === 0 ? (
-            <EmptyState title="No transactions found" description="Add a transaction or broaden the filters to see more results." />
+            <EmptyState title={scopeHasAccounts ? "No transactions found" : "No accounts in this view"} description={scopeHasAccounts ? "Add a transaction or broaden the filters to see more results." : transactionView === "shared" ? "Shared accounts you can post into or review will appear here when available." : "Your owned accounts will appear here when available."} />
           ) : (
             <div className="transactions-table">
-              {transactions.map((item) => (
-                <article key={item.id} className="transaction-row">
-                  <div>
-                    <strong>{item.merchant || item.categoryName || item.type}</strong>
-                    <p>{item.accountName}{item.transferAccountName ? ` to ${item.transferAccountName}` : ""}</p>
-                    <small>{item.note || formatDate(item.dateUtc)}</small>
-                  </div>
-                  <div className="transaction-row__aside">
-                    <span className="transaction-type-pill">{item.type}</span>
-                    <strong>{formatCurrency(item.amount)}</strong>
-                    <div className="inline-actions">
-                      <button type="button" className="ghost-button ghost-button--small" onClick={() => editTransaction(item)} aria-label={`Edit transaction ${item.id}`}>Edit</button>
-                      <button type="button" className="ghost-button ghost-button--small" onClick={() => deleteTransaction(item.id)} aria-label={`Delete transaction ${item.id}`}>Delete</button>
+              {transactions.map((item) => {
+                const sourceAccount = accountById.get(item.accountId);
+                const sourceShared = sourceAccount?.isShared;
+
+                return (
+                  <article key={item.id} className="transaction-row">
+                    <div className="transaction-row__body">
+                      <strong>{item.merchant || item.categoryName || item.type}</strong>
+                      <p>{item.accountName}{item.transferAccountName ? ` to ${item.transferAccountName}` : ""}</p>
+                      <div className="transaction-row__meta-stack">
+                        <small className="transaction-row__meta-line">{item.note || formatDate(item.dateUtc)}</small>
+                        <small className="transaction-row__meta-line">Updated by {item.updatedByDisplayName}</small>
+                        {sourceShared ? (
+                          <small className="transaction-row__meta-line transaction-row__meta-line--shared">
+                            Shared account access: {sourceAccount?.currentUserRole} | Owner {sourceAccount?.ownerDisplayName}
+                          </small>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                    <div className="transaction-row__aside">
+                      <span className="transaction-type-pill">{item.type}</span>
+                      <strong>{formatCurrency(item.amount)}</strong>
+                      <div className="inline-actions">
+                        {canMutateTransaction(item) ? <button type="button" className="ghost-button ghost-button--small" onClick={() => editTransaction(item)} aria-label={`Edit transaction ${item.id}`}>Edit</button> : null}
+                        {canMutateTransaction(item) ? <button type="button" className="ghost-button ghost-button--small" onClick={() => void deleteTransaction(item)} aria-label={`Delete transaction ${item.id}`}>Delete</button> : null}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
           <div className="pagination-row">
@@ -331,6 +461,13 @@ export function TransactionsPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
 
 
 

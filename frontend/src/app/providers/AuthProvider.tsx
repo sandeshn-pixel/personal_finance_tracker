@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { authApi } from "../../features/auth/api/authApi";
 import type { AuthResponse, AuthUser, LoginPayload, RegisterPayload } from "../../features/auth/api/types";
+import { ApiError } from "../../shared/lib/api/client";
 
 type AuthStatus = "loading" | "authenticated" | "anonymous";
 
@@ -27,20 +28,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     void refreshSession();
   }, []);
 
   async function refreshSession() {
-    try {
-      const response = await authApi.refresh();
-      applyAuthResponse(response, setUser, setAccessToken, setStatus);
-    } catch {
-      setUser(null);
-      setAccessToken(null);
-      setStatus("anonymous");
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
     }
+
+    const refreshOperation = (async () => {
+      try {
+        const response = await authApi.refresh();
+        applyAuthResponse(response, setUser, setAccessToken, setStatus);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 429) {
+          setStatus((current) => current === "loading" ? "anonymous" : current);
+          return;
+        }
+
+        setUser(null);
+        setAccessToken(null);
+        setStatus("anonymous");
+      } finally {
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshOperation;
+    return refreshOperation;
   }
 
   async function login(payload: LoginPayload) {

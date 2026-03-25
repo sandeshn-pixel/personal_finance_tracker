@@ -142,6 +142,30 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             }));
 
+    options.AddPolicy("InsightsRead", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"insights-read:{GetUserOrIpIdentity(context)}",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("WorkspaceUi", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"workspace-ui:{GetUserOrIpIdentity(context)}",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 90,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
     options.AddPolicy("ExportHeavy", context =>
         RateLimitPartition.GetTokenBucketLimiter(
             partitionKey: $"export-heavy:{GetUserOrIpIdentity(context)}",
@@ -237,3 +261,5 @@ static string GetUserOrIpIdentity(HttpContext context)
     var userId = context.User.FindFirst("sub")?.Value;
     return !string.IsNullOrWhiteSpace(userId) ? userId : GetRequestIdentity(context);
 }
+
+

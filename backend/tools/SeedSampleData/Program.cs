@@ -1,4 +1,4 @@
-﻿using FinanceTracker.Application.Accounts.DTOs;
+using FinanceTracker.Application.Accounts.DTOs;
 using FinanceTracker.Application.Budgets.DTOs;
 using FinanceTracker.Application.Goals.DTOs;
 using FinanceTracker.Application.RecurringTransactions.DTOs;
@@ -22,15 +22,17 @@ var options = new DbContextOptionsBuilder<ApplicationDbContext>()
 await using var dbContext = new ApplicationDbContext(options);
 var categorySeeder = new CategorySeeder(dbContext);
 var notificationService = new NotificationService(dbContext);
-var accountService = new AccountService(dbContext);
-var transactionService = new TransactionService(dbContext, categorySeeder);
+var accountAccessService = new AccountAccessService(dbContext);
+var accountService = new AccountService(dbContext, accountAccessService);
+var transactionService = new TransactionService(dbContext, categorySeeder, accountAccessService);
 var budgetService = new BudgetService(dbContext);
-var goalService = new GoalService(dbContext, notificationService);
+var goalService = new GoalService(dbContext, notificationService, accountAccessService);
 var recurringService = new RecurringTransactionService(
     dbContext,
     transactionService,
     notificationService,
-    Microsoft.Extensions.Options.Options.Create(new FinanceTracker.Infrastructure.Automation.AutomationOptions()));
+    Microsoft.Extensions.Options.Options.Create(new FinanceTracker.Infrastructure.Automation.AutomationOptions()),
+    accountAccessService);
 
 var users = await dbContext.Users
     .AsNoTracking()
@@ -496,3 +498,4 @@ static string LoadConnectionString(string rootPath)
 
     throw new InvalidOperationException("ConnectionStrings__DefaultConnection was not found in backend/.env.");
 }
+

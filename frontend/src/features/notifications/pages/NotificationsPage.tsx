@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { Alert } from "../../../shared/components/Alert";
@@ -63,6 +63,16 @@ export function NotificationsPage() {
     } : current);
   }
 
+  const inviteItems = useMemo(
+    () => feed?.items.filter((item) => item.type === "SharedAccountInvite") ?? [],
+    [feed],
+  );
+
+  const generalItems = useMemo(
+    () => feed?.items.filter((item) => item.type !== "SharedAccountInvite") ?? [],
+    [feed],
+  );
+
   if (loading && !feed) return <PageLoader label="Loading notifications" />;
   if (!feed && errorMessage) return <Alert message={errorMessage} />;
 
@@ -70,7 +80,7 @@ export function NotificationsPage() {
     <div className="page-stack">
       <SectionHeader
         title="Notifications"
-        description="Review reminders, automation outcomes, and goal updates in one place."
+        description="Review reminders, automation outcomes, shared-account invites, and goal updates in one place."
         action={(
           <div className="button-row">
             <button type="button" className={`ghost-button${!unreadOnly ? " notifications-filter-button--active" : ""}`} onClick={() => setUnreadOnly(false)}>All</button>
@@ -84,6 +94,40 @@ export function NotificationsPage() {
       <section className="panel-card notifications-history-card">
         <div className="panel-card__header panel-card__header--inline">
           <div>
+            <h3>My invites</h3>
+            <p>{inviteItems.length} shared-account invite notification{inviteItems.length === 1 ? "" : "s"} in your current feed.</p>
+          </div>
+          <button type="button" className="ghost-button ghost-button--small" onClick={() => void load(unreadOnly)}>Refresh</button>
+        </div>
+
+        {loading ? <p className="notification-panel__state">Refreshing notifications...</p> : null}
+        {!loading && inviteItems.length === 0 ? (
+          <EmptyState title="No invites right now" description={unreadOnly ? "No unread invite notifications are waiting for you." : "Shared-account invites sent to you will appear here."} />
+        ) : null}
+
+        <div className="notification-list notification-list--page">
+          {inviteItems.map((notification) => (
+            <button
+              key={notification.id}
+              type="button"
+              className={`notification-item notification-item--history${notification.isRead ? " notification-item--read" : ""}`}
+              onClick={() => void openNotification(notification)}
+            >
+              <span className={`notification-dot notification-dot--${notification.level.toLowerCase()}`} aria-hidden="true" />
+              <span className="notification-item__content">
+                <strong>{notification.title}</strong>
+                <span>{notification.message}</span>
+                <small>{formatDate(notification.createdUtc)}{notification.route ? ` | Opens invite flow` : ""}</small>
+              </span>
+              <span className={`status-badge ${notification.isRead ? "status-badge--warning" : "status-badge--default"}`}>{notification.isRead ? "Read" : "New"}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel-card notifications-history-card">
+        <div className="panel-card__header panel-card__header--inline">
+          <div>
             <h3>Notification history</h3>
             <p>{feed?.unreadCount ?? 0} unread notification{feed?.unreadCount === 1 ? "" : "s"} in your current feed.</p>
           </div>
@@ -91,12 +135,12 @@ export function NotificationsPage() {
         </div>
 
         {loading ? <p className="notification-panel__state">Refreshing notifications...</p> : null}
-        {!loading && feed && feed.items.length === 0 ? (
-          <EmptyState title="No notifications to show" description={unreadOnly ? "Everything is read right now." : "You are all caught up for now."} />
+        {!loading && generalItems.length === 0 ? (
+          <EmptyState title="No other notifications to show" description={unreadOnly ? "Everything else is read right now." : "You are all caught up for now."} />
         ) : null}
 
         <div className="notification-list notification-list--page">
-          {feed?.items.map((notification) => (
+          {generalItems.map((notification) => (
             <button
               key={notification.id}
               type="button"

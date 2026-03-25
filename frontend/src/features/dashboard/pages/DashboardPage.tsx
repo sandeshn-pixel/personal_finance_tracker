@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../../app/providers/AuthProvider";
-import { accountsApi } from "../../accounts/api/accountsApi";
+import { useWorkspaceScope } from "../../../app/providers/WorkspaceScopeProvider";
+import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
 import { dashboardApi, type DashboardSummaryDto } from "../api/dashboardApi";
 import { forecastApi, type ForecastDailyResponseDto, type ForecastMonthSummaryDto } from "../../forecast/api/forecastApi";
 import { insightsApi, type HealthScoreResponseDto } from "../../insights/api/insightsApi";
@@ -13,6 +14,7 @@ import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatCard } from "../../../shared/components/StatCard";
 import { ApiError } from "../../../shared/lib/api/client";
 import { formatCurrency, formatDate } from "../../../shared/lib/format";
+import { filterAccountsForView, getScopedAccountIdsForView, hasSharedGuestAccounts } from "../../../shared/lib/sharedAccessView";
 
 const goalBadges: Record<string, string> = {
   Shield: "S",
@@ -32,42 +34,74 @@ const forecastRiskTone: Record<string, "default" | "warning" | "danger"> = {
 
 export function DashboardPage() {
   const { accessToken } = useAuth();
+  const { sharedAccessView } = useWorkspaceScope();
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [forecastMonth, setForecastMonth] = useState<ForecastMonthSummaryDto | null>(null);
   const [forecastDaily, setForecastDaily] = useState<ForecastDailyResponseDto | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScoreResponseDto | null>(null);
-  const [accountCount, setAccountCount] = useState(0);
+  const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
 
   useEffect(() => {
     void load();
-  }, [accessToken]);
+  }, [accessToken, sharedAccessView]);
 
   async function load() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [summaryResponse, accounts, forecastMonthResponse, forecastDailyResponse, healthScoreResponse] = await Promise.all([
-        dashboardApi.summary(accessToken),
-        accountsApi.list(accessToken),
-        forecastApi.month(accessToken),
-        forecastApi.daily(accessToken),
-        insightsApi.healthScore(accessToken),
+      const accountResponse = await accountsApi.list(accessToken);
+      const activeAccountResponse = accountResponse.filter((item) => !item.isArchived);
+      const scopedAccountIds = getScopedAccountIdsForView(activeAccountResponse, sharedAccessView);
+      setAccounts(accountResponse);
+
+      if (sharedAccessView !== "all" && activeAccountResponse.length > 0 && scopedAccountIds.length === 0) {
+        setSummary(null);
+        setForecastMonth(null);
+        setForecastDaily(null);
+        setHealthScore(null);
+        setErrorVariant("error");
+        setErrorMessage(null);
+        return;
+      }
+
+      const scopeQuery = scopedAccountIds.length > 0 ? { accountIds: scopedAccountIds } : undefined;
+
+      const [summaryResponse, forecastMonthResponse, forecastDailyResponse, healthScoreResponse] = await Promise.all([
+        dashboardApi.summary(accessToken, scopeQuery),
+        forecastApi.month(accessToken, scopeQuery),
+        forecastApi.daily(accessToken, scopeQuery),
+        insightsApi.healthScore(accessToken, scopeQuery),
       ]);
+
       setSummary(summaryResponse);
-      setAccountCount(accounts.filter((item) => !item.isArchived).length);
       setForecastMonth(forecastMonthResponse);
       setForecastDaily(forecastDailyResponse);
       setHealthScore(healthScoreResponse);
+      setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : "Unable to load dashboard.");
+      if (error instanceof ApiError && error.status === 429) {
+        setErrorVariant("info");
+        setErrorMessage("Dashboard insights are refreshing too quickly. Please wait a moment and try again.");
+      } else {
+        setErrorVariant("error");
+        setErrorMessage(error instanceof ApiError ? error.message : "Unable to load dashboard.");
+      }
     } finally {
       setLoading(false);
     }
   }
 
+  const activeAccounts = useMemo(() => accounts.filter((item) => !item.isArchived), [accounts]);
+  const scopedActiveAccounts = useMemo(() => filterAccountsForView(activeAccounts, sharedAccessView), [activeAccounts, sharedAccessView]);
+  const showSharedViewToggle = useMemo(() => hasSharedGuestAccounts(activeAccounts), [activeAccounts]);
+  const sharedGuestAccounts = useMemo(() => scopedActiveAccounts.filter((item) => item.isShared && item.currentUserRole !== "Owner"), [scopedActiveAccounts]);
+  const isScopeEmpty = sharedAccessView !== "all" && activeAccounts.length > 0 && scopedActiveAccounts.length === 0;
+  const accountCount = scopedActiveAccounts.length;
+  const accountLookup = useMemo(() => new Map(scopedActiveAccounts.map((item) => [item.id, item])), [scopedActiveAccounts]);
   const maxSpend = useMemo(() => Math.max(...(summary?.spendingByCategory.map((item) => item.amount) ?? [0])), [summary]);
   const maxAccountBalance = useMemo(() => Math.max(...(summary?.accountBalanceDistribution.map((item) => item.currentBalance) ?? [0])), [summary]);
   const totalAccountBalance = useMemo(
@@ -104,8 +138,45 @@ export function DashboardPage() {
     [healthScore]
   );
 
+  const scopeMessage = useMemo(() => {
+    if (sharedAccessView === "shared" && sharedGuestAccounts.length > 0) {
+      return `Dashboard is currently focused on ${sharedGuestAccounts.length} shared account${sharedGuestAccounts.length === 1 ? "" : "s"}. Forecasts and health score use only that shared activity, while goals and recurring automation remain owner-managed in this phase.`;
+    }
+
+    if (sharedAccessView === "mine" && showSharedViewToggle) {
+      return "Dashboard is currently focused on your own accounts only. Shared-account balances, forecasts, and health metrics are excluded from this view.";
+    }
+
+    if (sharedGuestAccounts.length > 0) {
+      return `You currently have access to ${sharedGuestAccounts.length} shared account${sharedGuestAccounts.length === 1 ? "" : "s"}. Balances, recent transactions, reports, forecasts, and health score include those shared accounts, while budgets, goals, and recurring automation remain owner-managed in this phase.`;
+    }
+
+    return null;
+  }, [sharedAccessView, sharedGuestAccounts, showSharedViewToggle]);
   if (loading) return <PageLoader label="Loading dashboard" />;
-  if (!summary || !forecastMonth || !forecastDaily || !healthScore) return <Alert message={errorMessage ?? "Dashboard is unavailable."} />;
+
+  if (isScopeEmpty) {
+    return (
+      <div className="page-stack dashboard-page">
+        <SectionHeader title="Dashboard" description="A quick operating view of cashflow, balances, budgets, goals, recurring activity, and recent ledger movement." />
+        {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
+        {scopeMessage ? <Alert message={scopeMessage} variant="info" /> : null}
+        <section className="dashboard-section">
+          <section className="panel-card">
+            <EmptyState
+              title="No accounts in this view"
+              description={sharedAccessView === "mine" ? "Mine is focused on accounts you own. There are no owned accounts available in the current workspace." : "Shared with me is focused on guest access. There are no shared guest accounts available in the current workspace."}
+            />
+            <div className="section-header__actions">
+              <Link to="/accounts" className="ghost-button">Go to accounts</Link>
+            </div>
+          </section>
+        </section>
+      </div>
+    );
+  }
+
+  if (!summary || !forecastMonth || !forecastDaily || !healthScore) return <Alert message={errorMessage ?? "Dashboard is unavailable."} variant={errorVariant} />;
 
   const isFirstRun = accountCount === 0
     && summary.recentTransactions.length === 0
@@ -116,7 +187,8 @@ export function DashboardPage() {
   return (
     <div className="page-stack dashboard-page">
       <SectionHeader title="Dashboard" description="A quick operating view of cashflow, balances, budgets, goals, recurring activity, and recent ledger movement." />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
+      {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
+      {scopeMessage ? <Alert message={scopeMessage} variant="info" /> : null}
 
       {isFirstRun ? (
         <section className="dashboard-section">
@@ -171,7 +243,7 @@ export function DashboardPage() {
                   <p>A single-view cashflow split for this month.</p>
                 </div>
                 {currentMonthCashflowTotal === 0 ? (
-                  <EmptyState title="No cashflow yet" description="Add income or expense activity to see the current month split." />
+                  <EmptyState title="No cashflow yet" description="Add income or expense activity to see the current month split." action={<Link to="/transactions" className="ghost-button">Add transaction</Link>} />
                 ) : (
                   <div className="donut-snapshot">
                     <div className="donut-snapshot__chart" style={incomeExpenseChartStyle}>
@@ -220,7 +292,7 @@ export function DashboardPage() {
                 <StatCard
                   label="Budget remaining"
                   value={formatCurrency(summary.budgetHealth.totalRemaining)}
-                  hint={`${summary.budgetHealth.overBudgetCount} over budget, ${summary.budgetHealth.thresholdReachedCount} warnings.`}
+                  hint={`${summary.budgetHealth.overBudgetCount} over budget, ${summary.budgetHealth.thresholdReachedCount} warnings.${summary.budgetHealth.sharedReadOnlyBudgetCount > 0 ? ` ${summary.budgetHealth.sharedReadOnlyBudgetCount} shared read-only budget ${summary.budgetHealth.sharedReadOnlyBudgetCount === 1 ? "summary" : "summaries"} included.` : ""}` }
                   tone={summary.budgetHealth.totalRemaining < 0 ? "negative" : "positive"}
                 />
                 <StatCard
@@ -261,7 +333,7 @@ export function DashboardPage() {
                   <span className={`status-badge status-badge--${forecastRiskTone[forecastMonth.riskLevel]}`}>{forecastMonth.riskLevel} risk</span>
                 </div>
                 {forecastPoints.length === 0 ? (
-                  <EmptyState title="No forecast yet" description="Forecast projections appear once at least one active account is available." />
+                  <EmptyState title="No forecast yet" description="Forecast projections appear once at least one active account is available." action={<Link to="/accounts" className="ghost-button">Add account</Link>} />
                 ) : (
                   <>
                     <div className="forecast-chart" aria-label="Projected daily balance through month end">
@@ -300,7 +372,7 @@ export function DashboardPage() {
                   <p>Known scheduled income and expenses still expected before month end.</p>
                 </div>
                 {forecastMonth.upcomingRecurring.itemCount === 0 ? (
-                  <EmptyState title="No upcoming recurring items" description="Active recurring rules due later this month will appear here." />
+                  <EmptyState title="No upcoming recurring items" description="Active recurring rules due later this month will appear here." action={<Link to="/recurring" className="ghost-button">Create recurring rule</Link>} />
                 ) : (
                   <>
                     <div className="health-tile-grid forecast-impact-grid">
@@ -378,7 +450,7 @@ export function DashboardPage() {
                   <p>Current month expense distribution with the highest-impact categories first.</p>
                 </div>
                 {summary.spendingByCategory.length === 0 ? (
-                  <EmptyState title="No expense activity" description="The chart appears once expense transactions are recorded." />
+                  <EmptyState title="No expense activity" description="The chart appears once expense transactions are recorded." action={<Link to="/transactions" className="ghost-button">Add expense</Link>} />
                 ) : (
                   <div className="spending-bars">
                     {topSpendingCategories.map((item, index) => {
@@ -430,7 +502,7 @@ export function DashboardPage() {
                   <p>Latest five recorded transactions across your ledger.</p>
                 </div>
                 {summary.recentTransactions.length === 0 ? (
-                  <EmptyState title="No transactions yet" description="Recent activity will appear here after you add your first transaction." />
+                  <EmptyState title="No transactions yet" description="Recent activity will appear here after you add your first transaction." action={<Link to="/transactions" className="ghost-button">Add transaction</Link>} />
                 ) : (
                   <div className="simple-list">
                     {summary.recentTransactions.slice(0, 5).map((item) => (
@@ -443,8 +515,12 @@ export function DashboardPage() {
                           </div>
                           <div className="transaction-activity__meta">
                             <span>{item.accountName}</span>
+                            {accountLookup.get(item.accountId)?.isShared ? (
+                              <span className="status-badge status-badge--default">Shared {accountLookup.get(item.accountId)?.currentUserRole}</span>
+                            ) : null}
                             <span className={`transaction-type-pill transaction-type-pill--${item.type.toLowerCase()}`}>{item.categoryName || item.type}</span>
                             <span>{formatDate(item.dateUtc)}</span>
+                            <span>By {item.updatedByDisplayName}</span>
                           </div>
                         </div>
                       </div>
@@ -459,9 +535,16 @@ export function DashboardPage() {
                   <p>Current month budget performance across planned expense categories.</p>
                 </div>
                 {summary.budgetHealth.totalBudgeted === 0 ? (
-                  <EmptyState title="No budgets configured" description="Create monthly budgets to track how actual expense activity compares with plan." />
+                  <EmptyState title="No budgets configured" description="Create monthly budgets to track how actual expense activity compares with plan." action={<Link to="/budgets" className="ghost-button">Create budget</Link>} />
                 ) : (
                   <div className="budget-health-card">
+                    {summary.budgetHealth.sharedReadOnlyBudgetCount > 0 ? (
+                      <div className="forecast-note-list">
+                        <div className="forecast-note-list__item">
+                          Includes {summary.budgetHealth.sharedReadOnlyBudgetCount} read-only shared budget {summary.budgetHealth.sharedReadOnlyBudgetCount === 1 ? "summary" : "summaries"} from {summary.budgetHealth.sharedOwnerCount} other account owner{summary.budgetHealth.sharedOwnerCount === 1 ? "" : "s"}.
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="budget-health-card__summary">
                       <strong>{formatCurrency(summary.budgetHealth.totalSpent)} spent of {formatCurrency(summary.budgetHealth.totalBudgeted)}</strong>
                       <span>{budgetUsage.toFixed(2)}% used</span>
@@ -491,7 +574,7 @@ export function DashboardPage() {
                   <p>Highest pressure budget categories this month.</p>
                 </div>
                 {summary.budgetUsage.length === 0 ? (
-                  <EmptyState title="No budgets configured" description="Create monthly budgets to compare plan versus actual spending." />
+                  <EmptyState title="No budgets configured" description="Create monthly budgets to compare plan versus actual spending." action={<Link to="/budgets" className="ghost-button">Create budget</Link>} />
                 ) : (
                   <div className="simple-list">
                     {topBudgetUsage.map((item) => (
@@ -499,6 +582,7 @@ export function DashboardPage() {
                         <div>
                           <strong>{item.categoryName}</strong>
                           <p>{formatCurrency(item.spent)} of {formatCurrency(item.budgeted)} used</p>
+                          {!item.canManage ? <small>Shared budget from {item.ownerDisplayName}</small> : null}
                         </div>
                         <div className="dashboard-inline-progress">
                           <ProgressBar value={item.usagePercent} tone={item.isOverBudget ? "danger" : item.isThresholdReached ? "warning" : "default"} />
@@ -516,7 +600,7 @@ export function DashboardPage() {
                   <p>Current balance distribution across active accounts.</p>
                 </div>
                 {summary.accountBalanceDistribution.length === 0 ? (
-                  <EmptyState title="No accounts available" description="Account balances will appear here once your ledgers are set up." />
+                  <EmptyState title="No accounts available" description="Account balances will appear here once your ledgers are set up." action={<Link to="/accounts" className="ghost-button">Add account</Link>} />
                 ) : (
                   <div className="balance-split">
                     <div className="balance-split__track">
@@ -533,7 +617,12 @@ export function DashboardPage() {
                       {summary.accountBalanceDistribution.map((item) => (
                         <div key={item.accountId} className="chart-row">
                           <div className="chart-row__label">
-                            <span>{item.accountName}</span>
+                            <div>
+                              <span>{item.accountName}</span>
+                              {accountLookup.get(item.accountId)?.isShared ? (
+                                <small>Shared | {accountLookup.get(item.accountId)?.currentUserRole} | Owner {accountLookup.get(item.accountId)?.ownerDisplayName}</small>
+                              ) : null}
+                            </div>
                             <div className="chart-row__value">
                               <strong>{formatCurrency(item.currentBalance, item.currencyCode)}</strong>
                               <small>{((item.currentBalance / (totalAccountBalance || 1)) * 100).toFixed(1)}%</small>
@@ -555,7 +644,7 @@ export function DashboardPage() {
                   <p>Active and completed goals.</p>
                 </div>
                 {summary.goalProgress.length === 0 ? (
-                  <EmptyState title="No goals yet" description="Create savings goals to track progress against your targets." />
+                  <EmptyState title="No goals yet" description="Create savings goals to track progress against your targets." action={<Link to="/goals" className="ghost-button">Create goal</Link>} />
                 ) : (
                   <div className="simple-list">
                     {topGoalProgress.map((goal) => (
@@ -588,3 +677,20 @@ export function DashboardPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

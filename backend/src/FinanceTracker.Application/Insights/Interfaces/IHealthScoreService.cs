@@ -4,5 +4,5 @@ namespace FinanceTracker.Application.Insights.Interfaces;
 
 public interface IHealthScoreService
 {
-    Task<HealthScoreResponseDto> GetAsync(Guid userId, CancellationToken cancellationToken);
+    Task<HealthScoreResponseDto> GetAsync(Guid userId, HealthScoreQuery query, CancellationToken cancellationToken);
 }

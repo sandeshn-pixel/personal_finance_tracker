@@ -1,5 +1,6 @@
-﻿import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AccountDetailsPage } from "../../features/accounts/pages/AccountDetailsPage";
+import { AccountInviteAcceptPage } from "../../features/accounts/pages/AccountInviteAcceptPage";
 import { AccountsPage } from "../../features/accounts/pages/AccountsPage";
 import { AuthGuard } from "../../features/auth/components/AuthGuard";
 import { ForgotPasswordPage } from "../../features/auth/pages/ForgotPasswordPage";
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
   { path: "/signup", element: <SignupPage /> },
   { path: "/forgot-password", element: <ForgotPasswordPage /> },
   { path: "/reset-password", element: <ResetPasswordPage /> },
+  { path: "/account-invites/accept", element: <AccountInviteAcceptPage /> },
   {
     element: <AuthGuard />,
     children: [

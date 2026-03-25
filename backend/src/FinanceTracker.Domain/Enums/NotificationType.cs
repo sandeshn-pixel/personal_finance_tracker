@@ -6,5 +6,6 @@ public enum NotificationType
     RecurringExecutionFailed = 2,
     GoalTargetApproaching = 3,
     GoalCompleted = 4,
-    RuleTriggeredAlert = 5
+    RuleTriggeredAlert = 5,
+    SharedAccountInvite = 6
 }

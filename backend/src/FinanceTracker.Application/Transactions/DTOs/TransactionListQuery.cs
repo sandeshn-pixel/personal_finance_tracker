@@ -10,6 +10,7 @@ public sealed class TransactionListQuery
     public DateTime? EndDateUtc { get; init; }
     public Guid? CategoryId { get; init; }
     public Guid? AccountId { get; init; }
+    public Guid[]? AccountIds { get; init; }
     public TransactionType? Type { get; init; }
     public decimal? MinAmount { get; init; }
     public decimal? MaxAmount { get; init; }

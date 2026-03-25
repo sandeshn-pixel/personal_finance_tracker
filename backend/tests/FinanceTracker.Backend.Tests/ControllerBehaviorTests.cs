@@ -161,6 +161,7 @@ public sealed class ControllerBehaviorTests
                 request.StartDateUtc,
                 request.AutoCreateTransaction,
                 RecurringRuleStatus.Active,
+                true,
                 DateTime.UtcNow,
                 DateTime.UtcNow,
                 null));

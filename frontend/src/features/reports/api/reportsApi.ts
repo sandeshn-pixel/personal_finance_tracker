@@ -54,6 +54,7 @@ export type ReportsQuery = {
   startDateUtc: string;
   endDateUtc: string;
   accountId?: string;
+  accountIds?: string[];
 };
 
 export function toQueryString(query: ReportsQuery) {
@@ -62,6 +63,11 @@ export function toQueryString(query: ReportsQuery) {
   params.set("endDateUtc", query.endDateUtc);
   if (query.accountId) {
     params.set("accountId", query.accountId);
+  }
+  if (query.accountIds?.length) {
+    for (const accountId of query.accountIds) {
+      params.append("accountIds", accountId);
+    }
   }
   return params.toString();
 }

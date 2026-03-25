@@ -10,5 +10,9 @@ public sealed class ForecastQueryValidator : AbstractValidator<ForecastQuery>
         RuleFor(x => x.AccountId)
             .Must(accountId => !accountId.HasValue || accountId.Value != Guid.Empty)
             .WithMessage("Account filter is invalid.");
+
+        RuleForEach(x => x.AccountIds)
+            .Must(accountId => accountId != Guid.Empty)
+            .WithMessage("Account filter contains an invalid value.");
     }
 }

@@ -11,4 +11,9 @@ public sealed record AccountDto(
     decimal CurrentBalance,
     string? InstitutionName,
     string? Last4Digits,
-    bool IsArchived);
+    bool IsArchived,
+    bool IsShared,
+    AccountMemberRole CurrentUserRole,
+    string OwnerDisplayName,
+    int MemberCount,
+    int PendingInviteCount);

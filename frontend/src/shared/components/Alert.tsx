@@ -1,6 +1,6 @@
 type AlertProps = {
   message: string;
-  variant?: "error" | "success";
+  variant?: "error" | "success" | "info";
 };
 
 export function Alert({ message, variant = "error" }: AlertProps) {

@@ -15,5 +15,6 @@ public sealed record GoalDto(
     string? Icon,
     string? Color,
     GoalStatus Status,
+    bool CanManage,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);

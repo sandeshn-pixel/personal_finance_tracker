@@ -18,10 +18,15 @@ public sealed class Transaction : AuditableEntity
     public string? PaymentMethod { get; set; }
     public Guid? RecurringTransactionId { get; set; }
     public bool IsDeleted { get; set; }
+    public Guid CreatedByUserId { get; set; }
+    public Guid UpdatedByUserId { get; set; }
 
     public User User { get; set; } = null!;
+    public User CreatedByUser { get; set; } = null!;
+    public User UpdatedByUser { get; set; } = null!;
     public Account Account { get; set; } = null!;
     public Account? TransferAccount { get; set; }
     public Category? Category { get; set; }
     public ICollection<TransactionTag> Tags { get; set; } = new List<TransactionTag>();
 }
+

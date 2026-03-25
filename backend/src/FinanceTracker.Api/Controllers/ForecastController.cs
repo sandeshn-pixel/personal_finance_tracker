@@ -10,7 +10,7 @@ namespace FinanceTracker.Api.Controllers;
 
 [ApiController]
 [Authorize]
-[EnableRateLimiting("ReportHeavy")]
+[EnableRateLimiting("InsightsRead")]
 [Route("api/forecast")]
 public sealed class ForecastController(
     IForecastService forecastService,
@@ -55,3 +55,4 @@ public sealed class ForecastController(
         return Ok(forecast);
     }
 }
+

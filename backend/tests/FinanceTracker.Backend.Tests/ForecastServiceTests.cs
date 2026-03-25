@@ -2,6 +2,7 @@ using FinanceTracker.Application.Forecasting.DTOs;
 using FinanceTracker.Backend.Tests.TestSupport;
 using FinanceTracker.Domain.Entities;
 using FinanceTracker.Domain.Enums;
+using FinanceTracker.Infrastructure.Financial;
 using FinanceTracker.Infrastructure.Forecasting;
 
 namespace FinanceTracker.Backend.Tests;
@@ -18,13 +19,13 @@ public sealed class ForecastServiceTests
         var savings = TestData.AddAccount(dbContext, user.Id, "Savings", 500m, AccountType.SavingsAccount);
 
         dbContext.Transactions.AddRange(
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Income, Amount = 900m, DateUtc = new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Income, Amount = 900m, DateUtc = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 300m, DateUtc = new DateTime(2026, 1, 20, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 300m, DateUtc = new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 300m, DateUtc = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, Type = TransactionType.Expense, Amount = 300m, DateUtc = new DateTime(2026, 3, 10, 0, 0, 0, DateTimeKind.Utc) },
-            new Transaction { UserId = user.Id, AccountId = checking.Id, TransferAccountId = savings.Id, Type = TransactionType.Transfer, Amount = 700m, DateUtc = new DateTime(2026, 3, 15, 0, 0, 0, DateTimeKind.Utc) });
+            CreateTransaction(user.Id, checking.Id, TransactionType.Income, 900m, new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Income, 900m, new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 1, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 3, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(user.Id, checking.Id, TransactionType.Transfer, 700m, new DateTime(2026, 3, 15, 0, 0, 0, DateTimeKind.Utc), savings.Id));
 
         dbContext.RecurringTransactionRules.Add(new RecurringTransactionRule
         {
@@ -41,8 +42,8 @@ public sealed class ForecastServiceTests
 
         await dbContext.SaveChangesAsync();
 
-        var service = new ForecastService(dbContext, new StaticTimeProvider(new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero)));
-        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null), CancellationToken.None);
+        var service = CreateService(dbContext, new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero));
+        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null, null), CancellationToken.None);
 
         Assert.Equal(6.67m, summary.AverageDailyNet);
         Assert.Equal(200m, summary.UpcomingRecurring.TotalExpectedExpense);
@@ -80,13 +81,15 @@ public sealed class ForecastServiceTests
             Type = TransactionType.Income,
             Amount = 500m,
             DateUtc = new DateTime(2026, 3, 25, 0, 0, 0, DateTimeKind.Utc),
-            RecurringTransactionId = ruleId
+            RecurringTransactionId = ruleId,
+            CreatedByUserId = user.Id,
+            UpdatedByUserId = user.Id
         });
 
         await dbContext.SaveChangesAsync();
 
-        var service = new ForecastService(dbContext, new StaticTimeProvider(new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero)));
-        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null), CancellationToken.None);
+        var service = CreateService(dbContext, new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero));
+        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null, null), CancellationToken.None);
 
         Assert.Equal(0m, summary.UpcomingRecurring.TotalExpectedIncome);
         Assert.Empty(summary.UpcomingRecurring.Items);
@@ -106,7 +109,9 @@ public sealed class ForecastServiceTests
             AccountId = checking.Id,
             Type = TransactionType.Expense,
             Amount = 75m,
-            DateUtc = new DateTime(2026, 3, 18, 0, 0, 0, DateTimeKind.Utc)
+            DateUtc = new DateTime(2026, 3, 18, 0, 0, 0, DateTimeKind.Utc),
+            CreatedByUserId = user.Id,
+            UpdatedByUserId = user.Id
         });
 
         dbContext.RecurringTransactionRules.Add(new RecurringTransactionRule
@@ -124,8 +129,8 @@ public sealed class ForecastServiceTests
 
         await dbContext.SaveChangesAsync();
 
-        var service = new ForecastService(dbContext, new StaticTimeProvider(new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero)));
-        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null), CancellationToken.None);
+        var service = CreateService(dbContext, new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero));
+        var summary = await service.GetMonthSummaryAsync(user.Id, new ForecastQuery(null, null), CancellationToken.None);
 
         Assert.True(summary.HasSparseData);
         Assert.Equal(0m, summary.AverageDailyNet);
@@ -133,8 +138,99 @@ public sealed class ForecastServiceTests
         Assert.Contains(summary.Notes, note => note.Contains("Recent transaction history is limited", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task MonthForecast_IncludesSharedViewerAccountHistory()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var owner = TestData.AddUser(dbContext, "owner@example.com");
+        var viewer = TestData.AddUser(dbContext, "viewer@example.com");
+        var checking = TestData.AddAccount(dbContext, owner.Id, "Shared Checking", 1500m);
+
+        dbContext.AccountMemberships.Add(new AccountMembership
+        {
+            AccountId = checking.Id,
+            UserId = viewer.Id,
+            Role = AccountMemberRole.Viewer,
+            InvitedByUserId = owner.Id,
+            LastModifiedByUserId = owner.Id
+        });
+
+        dbContext.Transactions.AddRange(
+            CreateTransaction(owner.Id, checking.Id, TransactionType.Income, 900m, new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, checking.Id, TransactionType.Income, 900m, new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 1, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, checking.Id, TransactionType.Expense, 300m, new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, checking.Id, TransactionType.Expense, 150m, new DateTime(2026, 3, 5, 0, 0, 0, DateTimeKind.Utc)));
+
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateService(dbContext, new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero));
+        var summary = await service.GetMonthSummaryAsync(viewer.Id, new ForecastQuery(null, checking.Id), CancellationToken.None);
+
+        Assert.Equal(1500m, summary.CurrentBalance);
+        Assert.False(summary.HasSparseData);
+        Assert.Equal(ForecastRiskLevel.Low, summary.RiskLevel);
+    }
+
+    [Fact]
+    public async Task MonthForecast_RespectsMineScopeWhenUserAlsoHasSharedAccounts()
+    {
+        await using var database = new SqliteTestDatabase();
+        await using var dbContext = database.CreateContext();
+        var owner = TestData.AddUser(dbContext, "owner@example.com");
+        var viewer = TestData.AddUser(dbContext, "viewer@example.com");
+        var ownAccount = TestData.AddAccount(dbContext, viewer.Id, "Personal Checking", 800m);
+        var sharedAccount = TestData.AddAccount(dbContext, owner.Id, "Shared Checking", 1500m);
+
+        dbContext.AccountMemberships.Add(new AccountMembership
+        {
+            AccountId = sharedAccount.Id,
+            UserId = viewer.Id,
+            Role = AccountMemberRole.Viewer,
+            InvitedByUserId = owner.Id,
+            LastModifiedByUserId = owner.Id
+        });
+
+        dbContext.Transactions.AddRange(
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Income, 600m, new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Expense, 300m, new DateTime(2026, 1, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Income, 600m, new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Expense, 300m, new DateTime(2026, 2, 20, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Income, 600m, new DateTime(2026, 3, 5, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(viewer.Id, ownAccount.Id, TransactionType.Expense, 150m, new DateTime(2026, 3, 12, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, sharedAccount.Id, TransactionType.Income, 900m, new DateTime(2026, 2, 12, 0, 0, 0, DateTimeKind.Utc)),
+            CreateTransaction(owner.Id, sharedAccount.Id, TransactionType.Expense, 150m, new DateTime(2026, 2, 24, 0, 0, 0, DateTimeKind.Utc)));
+
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateService(dbContext, new DateTimeOffset(2026, 3, 21, 8, 0, 0, TimeSpan.Zero));
+        var summary = await service.GetMonthSummaryAsync(viewer.Id, new ForecastQuery([ownAccount.Id], null), CancellationToken.None);
+
+        Assert.Equal(800m, summary.CurrentBalance);
+        Assert.Equal(11.67m, summary.AverageDailyNet);
+    }
+
+    private static ForecastService CreateService(FinanceTracker.Infrastructure.Persistence.ApplicationDbContext dbContext, DateTimeOffset utcNow)
+        => new(dbContext, new StaticTimeProvider(utcNow), new AccountAccessService(dbContext));
+
+    private static Transaction CreateTransaction(Guid userId, Guid accountId, TransactionType type, decimal amount, DateTime dateUtc, Guid? transferAccountId = null)
+        => new()
+        {
+            UserId = userId,
+            AccountId = accountId,
+            TransferAccountId = transferAccountId,
+            Type = type,
+            Amount = amount,
+            DateUtc = dateUtc,
+            CreatedByUserId = userId,
+            UpdatedByUserId = userId
+        };
+
     private sealed class StaticTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
+
+

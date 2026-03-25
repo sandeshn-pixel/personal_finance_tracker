@@ -18,13 +18,21 @@ public sealed class RecurringTransactionService(
     ApplicationDbContext dbContext,
     ITransactionService transactionService,
     INotificationService notificationService,
-    IOptions<AutomationOptions> automationOptions) : IRecurringTransactionService
+    IOptions<AutomationOptions> automationOptions,
+    AccountAccessService accountAccessService) : IRecurringTransactionService
 {
     public async Task<IReadOnlyCollection<RecurringTransactionDto>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
+        var accessibleAccountIds = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: true)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
         var rules = await dbContext.RecurringTransactionRules
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Status != RecurringRuleStatus.Deleted)
+            .Where(x => x.Status != RecurringRuleStatus.Deleted
+                && (x.UserId == userId
+                    || accessibleAccountIds.Contains(x.AccountId)
+                    || (x.TransferAccountId.HasValue && accessibleAccountIds.Contains(x.TransferAccountId.Value))))
             .Include(x => x.Account)
             .Include(x => x.TransferAccount)
             .Include(x => x.Category)
@@ -34,21 +42,29 @@ public sealed class RecurringTransactionService(
             .ThenBy(x => x.Title)
             .ToListAsync(cancellationToken);
 
-        return rules.Select(MapRule).ToList();
+        return rules.Select(rule => MapRule(rule, rule.UserId == userId)).ToList();
     }
 
     public async Task<RecurringTransactionDto?> GetAsync(Guid userId, Guid ruleId, CancellationToken cancellationToken)
     {
+        var accessibleAccountIds = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: true)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
         var rule = await dbContext.RecurringTransactionRules
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Id == ruleId && x.Status != RecurringRuleStatus.Deleted)
+            .Where(x => x.Id == ruleId
+                && x.Status != RecurringRuleStatus.Deleted
+                && (x.UserId == userId
+                    || accessibleAccountIds.Contains(x.AccountId)
+                    || (x.TransferAccountId.HasValue && accessibleAccountIds.Contains(x.TransferAccountId.Value))))
             .Include(x => x.Account)
             .Include(x => x.TransferAccount)
             .Include(x => x.Category)
             .Include(x => x.Executions)
             .SingleOrDefaultAsync(cancellationToken);
 
-        return rule is null ? null : MapRule(rule);
+        return rule is null ? null : MapRule(rule, rule.UserId == userId);
     }
 
     public async Task<RecurringTransactionDto> CreateAsync(Guid userId, CreateRecurringTransactionRequest request, CancellationToken cancellationToken)
@@ -80,7 +96,7 @@ public sealed class RecurringTransactionService(
         rule.Account = resolved.SourceAccount;
         rule.TransferAccount = resolved.TransferAccount;
         rule.Category = resolved.Category;
-        return MapRule(rule);
+        return MapRule(rule, true);
     }
 
     public async Task<RecurringTransactionDto> UpdateAsync(Guid userId, Guid ruleId, UpdateRecurringTransactionRequest request, CancellationToken cancellationToken)
@@ -120,7 +136,7 @@ public sealed class RecurringTransactionService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return MapRule(rule);
+        return MapRule(rule, true);
     }
 
     public async Task<RecurringTransactionDto> PauseAsync(Guid userId, Guid ruleId, CancellationToken cancellationToken)
@@ -140,7 +156,7 @@ public sealed class RecurringTransactionService(
 
         rule.Status = RecurringRuleStatus.Paused;
         await dbContext.SaveChangesAsync(cancellationToken);
-        return MapRule(rule);
+        return MapRule(rule, true);
     }
 
     public async Task<RecurringTransactionDto> ResumeAsync(Guid userId, Guid ruleId, CancellationToken cancellationToken)
@@ -161,7 +177,7 @@ public sealed class RecurringTransactionService(
         rule.NextRunDateUtc = RecurringScheduleCalculator.RecalculateNextRunDate(rule, rule.Executions);
         rule.Status = rule.NextRunDateUtc.HasValue ? RecurringRuleStatus.Active : RecurringRuleStatus.Completed;
         await dbContext.SaveChangesAsync(cancellationToken);
-        return MapRule(rule);
+        return MapRule(rule, true);
     }
 
     public async Task DeleteAsync(Guid userId, Guid ruleId, CancellationToken cancellationToken)
@@ -433,7 +449,7 @@ public sealed class RecurringTransactionService(
         return (sourceAccount, transferAccount, category);
     }
 
-    private static RecurringTransactionDto MapRule(RecurringTransactionRule rule)
+    private static RecurringTransactionDto MapRule(RecurringTransactionRule rule, bool canManage)
     {
         var lastProcessedAtUtc = rule.Executions
             .Where(x => x.Status == RecurringExecutionStatus.Completed)
@@ -458,6 +474,7 @@ public sealed class RecurringTransactionService(
             rule.NextRunDateUtc,
             rule.AutoCreateTransaction,
             rule.Status,
+            canManage,
             rule.CreatedUtc,
             rule.UpdatedUtc,
             lastProcessedAtUtc);
@@ -475,3 +492,5 @@ public sealed class RecurringTransactionService(
 
     private static decimal RoundMoney(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 }
+
+

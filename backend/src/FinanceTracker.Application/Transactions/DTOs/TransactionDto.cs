@@ -18,5 +18,9 @@ public sealed record TransactionDto(
     string? PaymentMethod,
     Guid? RecurringTransactionId,
     IReadOnlyCollection<string> Tags,
+    Guid CreatedByUserId,
+    string CreatedByDisplayName,
+    Guid UpdatedByUserId,
+    string UpdatedByDisplayName,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);

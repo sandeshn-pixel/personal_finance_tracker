@@ -14,6 +14,8 @@ export type BudgetDto = {
   percentageUsed: number;
   isOverBudget: boolean;
   isThresholdReached: boolean;
+  canManage: boolean;
+  ownerDisplayName: string;
 };
 
 export type BudgetSummaryDto = {

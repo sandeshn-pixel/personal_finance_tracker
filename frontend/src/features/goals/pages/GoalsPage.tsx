@@ -129,6 +129,11 @@ export function GoalsPage() {
   }
 
   function editGoal(goal: GoalDto) {
+    if (!goal.canManage) {
+      setErrorMessage("This goal is visible because it is linked to a shared account, but only the owner can edit it.");
+      return;
+    }
+
     setEditing(goal);
     reset({
       name: goal.name,
@@ -219,6 +224,8 @@ export function GoalsPage() {
   const activeGoals = useMemo(() => goals.filter((goal) => goal.status === "Active"), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.status === "Completed"), [goals]);
   const archivedGoals = useMemo(() => goals.filter((goal) => goal.status === "Archived"), [goals]);
+  const manageableAccounts = useMemo(() => accounts.filter((account) => account.currentUserRole === "Owner"), [accounts]);
+  const sharedReadOnlyGoals = useMemo(() => goals.filter((goal) => !goal.canManage), [goals]);
   const totalTarget = useMemo(() => goals.reduce((sum, goal) => sum + goal.targetAmount, 0), [goals]);
   const totalSaved = useMemo(() => goals.reduce((sum, goal) => sum + goal.currentAmount, 0), [goals]);
 
@@ -229,7 +236,8 @@ export function GoalsPage() {
   return (
     <div className="page-stack">
       <SectionHeader title="Goals" description="Track savings targets with audited contributions, withdrawals, and optional linked-account movement." action={<Button type="button" onClick={resetGoalForm}>New goal</Button>} />
-      {errorMessage ? <Alert message={errorMessage} /> : null}
+      {errorMessage ? <Alert message={errorMessage} variant="info" /> : null}
+      {sharedReadOnlyGoals.length > 0 ? <Alert message={`You can review ${sharedReadOnlyGoals.length} shared goal${sharedReadOnlyGoals.length === 1 ? "" : "s"} linked to shared accounts here, but only the owner can change them.`} variant="info" /> : null}
       <div className="stats-grid stats-grid--four">
         <StatCard label="Goals" value={String(goals.length)} hint={`${activeGoals.length} active, ${completedGoals.length} completed.`} />
         <StatCard label="Targeted" value={formatCurrency(totalTarget)} hint="Combined target amount across all goals." />
@@ -241,6 +249,7 @@ export function GoalsPage() {
           <div className="panel-card__header">
             <h3>{editing ? "Edit goal" : "Create savings goal"}</h3>
             <p>Goal entries form the audit trail; current balance is never edited directly.</p>
+            {manageableAccounts.length === 0 ? <small>No owner-managed accounts are available for linking new goals right now.</small> : null}
           </div>
           <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
             <Field label="Goal name" error={errors.name?.message}><input {...register("name")} placeholder="Emergency fund" /></Field>
@@ -252,7 +261,7 @@ export function GoalsPage() {
               <Field label="Linked account" error={errors.linkedAccountId?.message}>
                 <SelectField {...register("linkedAccountId")}>
                   <option value="">No linked account</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  {manageableAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </SelectField>
               </Field>
               <Field label="Icon" error={errors.icon?.message}>
@@ -296,7 +305,10 @@ export function GoalsPage() {
                                 <p>{icon.label}</p>
                               </div>
                             </div>
+                            <div className="account-card__title-row">
                             <span className="status-badge status-badge--default">{goal.status}</span>
+                            {!goal.canManage ? <span className="status-badge status-badge--warning">Shared view</span> : null}
+                          </div>
                           </div>
                           <p>{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)} saved</p>
                           <ProgressBar value={goal.progressPercent} />
@@ -306,11 +318,17 @@ export function GoalsPage() {
                             <span>{goal.linkedAccountName ?? "Standalone goal"}</span>
                           </div>
                         </button>
-                        <div className="inline-actions">
-                          <button type="button" className="ghost-button ghost-button--small" onClick={() => editGoal(goal)}>Edit</button>
-                          <button type="button" className="ghost-button ghost-button--small" onClick={() => completeGoal(goal.id)}>Complete</button>
-                          <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveGoal(goal.id)}>Archive</button>
-                        </div>
+                        {goal.canManage ? (
+                          <div className="inline-actions">
+                            <button type="button" className="ghost-button ghost-button--small" onClick={() => editGoal(goal)}>Edit</button>
+                            <button type="button" className="ghost-button ghost-button--small" onClick={() => completeGoal(goal.id)}>Complete</button>
+                            <button type="button" className="ghost-button ghost-button--small" onClick={() => archiveGoal(goal.id)}>Archive</button>
+                          </div>
+                        ) : (
+                          <div className="budget-card__metrics">
+                            <span>Read-only shared goal</span>
+                          </div>
+                        )}
                       </article>
                     );
                   })}
@@ -336,7 +354,7 @@ export function GoalsPage() {
                             </div>
                             <span className="status-badge status-badge--warning">Completed</span>
                           </div>
-                          <p>{formatCurrency(goal.currentAmount)} saved • Target date {goal.targetDateUtc ? formatDate(goal.targetDateUtc) : "Flexible"}</p>
+                          <p>{formatCurrency(goal.currentAmount)} saved | Target date {goal.targetDateUtc ? formatDate(goal.targetDateUtc) : "Flexible"}</p>
                         </button>
                       </article>
                     );
@@ -355,7 +373,7 @@ export function GoalsPage() {
             <h3>Goal activity</h3>
             <p>Contribution and withdrawal flows update the goal ledger and linked account together.</p>
           </div>
-          {selectedGoal?.goal ? <div className="inline-actions">
+          {selectedGoal?.goal?.canManage ? <div className="inline-actions">
             <button type="button" className="ghost-button ghost-button--small" onClick={() => setEntryMode("contribution")}>Contribution</button>
             <button type="button" className="ghost-button ghost-button--small" onClick={() => setEntryMode("withdrawal")}>Withdrawal</button>
           </div> : null}
@@ -370,7 +388,7 @@ export function GoalsPage() {
                   <span className={`goal-badge goal-badge--${getGoalColor(selectedGoal.goal.color).value}`}>{getGoalIcon(selectedGoal.goal.icon).badge}</span>
                   <div>
                     <h3>{selectedGoal.goal.name}</h3>
-                    <p>{selectedGoal.goal.linkedAccountName ?? "No linked account"} • {selectedGoal.goal.targetDateUtc ? formatDate(selectedGoal.goal.targetDateUtc) : "No target date"}</p>
+                    <p>{selectedGoal.goal.linkedAccountName ?? "No linked account"} | {selectedGoal.goal.targetDateUtc ? formatDate(selectedGoal.goal.targetDateUtc) : "No target date"}</p>
                   </div>
                 </div>
               </div>
@@ -380,14 +398,18 @@ export function GoalsPage() {
                 <span>{formatCurrency(selectedGoal.goal.targetAmount)} target</span>
                 <span>{formatCurrency(selectedGoal.goal.remainingAmount)} remaining</span>
               </div>
-              <form className="form-stack" onSubmit={entryForm.handleSubmit(submitEntry)} noValidate>
-                <div className="field-grid">
-                  <Field label={entryMode === "contribution" ? "Contribution amount" : "Withdrawal amount"} error={entryForm.formState.errors.amount?.message}><input {...entryForm.register("amount")} type="number" step="0.01" /></Field>
-                  <Field label="Date" error={entryForm.formState.errors.occurredAtUtc?.message}><input {...entryForm.register("occurredAtUtc")} type="date" /></Field>
-                </div>
-                <Field label="Note" error={entryForm.formState.errors.note?.message}><input {...entryForm.register("note")} placeholder="Optional note" /></Field>
-                <Button type="submit" loading={entryForm.formState.isSubmitting}>{entryMode === "contribution" ? "Add contribution" : "Record withdrawal"}</Button>
-              </form>
+              {selectedGoal.goal.canManage ? (
+                <form className="form-stack" onSubmit={entryForm.handleSubmit(submitEntry)} noValidate>
+                  <div className="field-grid">
+                    <Field label={entryMode === "contribution" ? "Contribution amount" : "Withdrawal amount"} error={entryForm.formState.errors.amount?.message}><input {...entryForm.register("amount")} type="number" step="0.01" /></Field>
+                    <Field label="Date" error={entryForm.formState.errors.occurredAtUtc?.message}><input {...entryForm.register("occurredAtUtc")} type="date" /></Field>
+                  </div>
+                  <Field label="Note" error={entryForm.formState.errors.note?.message}><input {...entryForm.register("note")} placeholder="Optional note" /></Field>
+                  <Button type="submit" loading={entryForm.formState.isSubmitting}>{entryMode === "contribution" ? "Add contribution" : "Record withdrawal"}</Button>
+                </form>
+              ) : (
+                <Alert message="This goal is linked to a shared account. You can review its progress and history here, but only the owner can contribute, withdraw, or edit it." variant="info" />
+              )}
             </section>
             <section className="panel-card">
               <div className="panel-card__header">
@@ -402,7 +424,7 @@ export function GoalsPage() {
                     <div key={entry.id} className="list-row">
                       <div>
                         <strong>{entry.type}</strong>
-                        <p>{entry.accountName ?? "No linked account"} • {formatDate(entry.occurredAtUtc)}</p>
+                        <p>{entry.accountName ?? "No linked account"} | {formatDate(entry.occurredAtUtc)}</p>
                         {entry.note ? <small>{entry.note}</small> : null}
                       </div>
                       <div className="transaction-row__aside">
@@ -420,3 +442,5 @@ export function GoalsPage() {
     </div>
   );
 }
+
+

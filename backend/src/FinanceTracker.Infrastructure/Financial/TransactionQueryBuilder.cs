@@ -7,7 +7,7 @@ internal static class TransactionQueryBuilder
 {
     public static IQueryable<Transaction> ApplyFilters(this IQueryable<Transaction> transactions, Guid userId, TransactionListQuery query)
     {
-        transactions = transactions.Where(x => x.UserId == userId && !x.IsDeleted);
+        transactions = transactions.WhereUserCanView(userId);
 
         if (query.StartDateUtc.HasValue)
         {
@@ -24,9 +24,10 @@ internal static class TransactionQueryBuilder
             transactions = transactions.Where(x => x.CategoryId == query.CategoryId.Value);
         }
 
-        if (query.AccountId.HasValue)
+        var requestedAccountIds = ResolveRequestedAccountIds(query);
+        if (requestedAccountIds.Count > 0)
         {
-            transactions = transactions.Where(x => x.AccountId == query.AccountId.Value || x.TransferAccountId == query.AccountId.Value);
+            transactions = transactions.Where(x => requestedAccountIds.Contains(x.AccountId) || (x.TransferAccountId.HasValue && requestedAccountIds.Contains(x.TransferAccountId.Value)));
         }
 
         if (query.Type.HasValue)
@@ -53,5 +54,15 @@ internal static class TransactionQueryBuilder
         }
 
         return transactions;
+    }
+
+    private static HashSet<Guid> ResolveRequestedAccountIds(TransactionListQuery query)
+    {
+        if (query.AccountIds is { Length: > 0 })
+        {
+            return query.AccountIds.ToHashSet();
+        }
+
+        return query.AccountId.HasValue ? [query.AccountId.Value] : [];
     }
 }

@@ -1,4 +1,4 @@
-﻿using FinanceTracker.Application.Common;
+using FinanceTracker.Application.Common;
 using FinanceTracker.Application.Rules.DTOs;
 using FinanceTracker.Application.Transactions.DTOs;
 using FinanceTracker.Backend.Tests.TestSupport;
@@ -104,7 +104,7 @@ public sealed class RulesEngineTests
 
         var notificationService = new NotificationService(dbContext);
         var evaluator = new TransactionRuleEvaluator(dbContext, notificationService);
-        var service = new TransactionService(dbContext, new CategorySeeder(dbContext), evaluator);
+        var service = new TransactionService(dbContext, new CategorySeeder(dbContext), new AccountAccessService(dbContext), evaluator);
 
         var created = await service.CreateAsync(user.Id, new UpsertTransactionRequest
         {
@@ -160,3 +160,4 @@ public sealed class RulesEngineTests
         PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
     };
 }
+

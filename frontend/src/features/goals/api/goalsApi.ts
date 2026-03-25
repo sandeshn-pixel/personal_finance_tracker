@@ -16,6 +16,7 @@ export type GoalDto = {
   icon?: string | null;
   color?: string | null;
   status: GoalStatus;
+  canManage: boolean;
   createdUtc: string;
   updatedUtc: string;
 };

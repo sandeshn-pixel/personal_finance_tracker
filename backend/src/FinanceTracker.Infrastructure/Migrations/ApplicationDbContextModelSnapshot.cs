@@ -78,6 +78,114 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.ToTable("accounts", (string)null);
                 });
 
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.AccountInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AcceptedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AcceptedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<DateTime>("ExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RevokedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcceptedByUserId");
+
+                    b.HasIndex("InvitedByUserId");
+
+                    b.HasIndex("RevokedByUserId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("AccountId", "Email", "Status");
+
+                    b.HasIndex("Email", "Status", "ExpiresUtc");
+
+                    b.ToTable("account_invites", (string)null);
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.AccountMembership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("InvitedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LastModifiedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvitedByUserId");
+
+                    b.HasIndex("LastModifiedByUserId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("AccountId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("account_memberships", (string)null);
+                });
+
             modelBuilder.Entity("FinanceTracker.Domain.Entities.Budget", b =>
                 {
                     b.Property<Guid>("Id")
@@ -512,6 +620,9 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -542,6 +653,9 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("UpdatedUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -550,11 +664,15 @@ namespace FinanceTracker.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AccountId");
-
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("TransferAccountId");
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("AccountId", "DateUtc");
+
+                    b.HasIndex("TransferAccountId", "DateUtc");
 
                     b.HasIndex("UserId", "DateUtc");
 
@@ -801,6 +919,74 @@ namespace FinanceTracker.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.AccountInvite", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "AcceptedByUser")
+                        .WithMany("AcceptedAccountInvites")
+                        .HasForeignKey("AcceptedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "Account")
+                        .WithMany("Invites")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "InvitedByUser")
+                        .WithMany("SentAccountInvites")
+                        .HasForeignKey("InvitedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "RevokedByUser")
+                        .WithMany("RevokedAccountInvites")
+                        .HasForeignKey("RevokedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AcceptedByUser");
+
+                    b.Navigation("Account");
+
+                    b.Navigation("InvitedByUser");
+
+                    b.Navigation("RevokedByUser");
+                });
+
+            modelBuilder.Entity("FinanceTracker.Domain.Entities.AccountMembership", b =>
+                {
+                    b.HasOne("FinanceTracker.Domain.Entities.Account", "Account")
+                        .WithMany("Memberships")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "InvitedByUser")
+                        .WithMany("InvitedAccountMemberships")
+                        .HasForeignKey("InvitedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "LastModifiedByUser")
+                        .WithMany("ModifiedAccountMemberships")
+                        .HasForeignKey("LastModifiedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "User")
+                        .WithMany("AccountMemberships")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("InvitedByUser");
+
+                    b.Navigation("LastModifiedByUser");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("FinanceTracker.Domain.Entities.Budget", b =>
                 {
                     b.HasOne("FinanceTracker.Domain.Entities.Category", "Category")
@@ -961,10 +1147,22 @@ namespace FinanceTracker.Infrastructure.Migrations
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "CreatedByUser")
+                        .WithMany("AuthoredTransactions")
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("FinanceTracker.Domain.Entities.Account", "TransferAccount")
                         .WithMany("TransferTransactions")
                         .HasForeignKey("TransferAccountId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FinanceTracker.Domain.Entities.User", "UpdatedByUser")
+                        .WithMany("UpdatedTransactions")
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("FinanceTracker.Domain.Entities.User", "User")
                         .WithMany("Transactions")
@@ -976,7 +1174,11 @@ namespace FinanceTracker.Infrastructure.Migrations
 
                     b.Navigation("Category");
 
+                    b.Navigation("CreatedByUser");
+
                     b.Navigation("TransferAccount");
+
+                    b.Navigation("UpdatedByUser");
 
                     b.Navigation("User");
                 });
@@ -1038,6 +1240,10 @@ namespace FinanceTracker.Infrastructure.Migrations
 
                     b.Navigation("Goals");
 
+                    b.Navigation("Invites");
+
+                    b.Navigation("Memberships");
+
                     b.Navigation("RecurringTransactionRules");
 
                     b.Navigation("RecurringTransferTransactionRules");
@@ -1071,7 +1277,13 @@ namespace FinanceTracker.Infrastructure.Migrations
 
             modelBuilder.Entity("FinanceTracker.Domain.Entities.User", b =>
                 {
+                    b.Navigation("AcceptedAccountInvites");
+
+                    b.Navigation("AccountMemberships");
+
                     b.Navigation("Accounts");
+
+                    b.Navigation("AuthoredTransactions");
 
                     b.Navigation("Budgets");
 
@@ -1081,6 +1293,10 @@ namespace FinanceTracker.Infrastructure.Migrations
 
                     b.Navigation("Goals");
 
+                    b.Navigation("InvitedAccountMemberships");
+
+                    b.Navigation("ModifiedAccountMemberships");
+
                     b.Navigation("Notifications");
 
                     b.Navigation("PasswordResetTokens");
@@ -1089,11 +1305,17 @@ namespace FinanceTracker.Infrastructure.Migrations
 
                     b.Navigation("RefreshTokens");
 
+                    b.Navigation("RevokedAccountInvites");
+
+                    b.Navigation("SentAccountInvites");
+
                     b.Navigation("Settings");
 
                     b.Navigation("TransactionRules");
 
                     b.Navigation("Transactions");
+
+                    b.Navigation("UpdatedTransactions");
                 });
 #pragma warning restore 612, 618
         }

@@ -10,27 +10,38 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FinanceTracker.Infrastructure.Financial;
 
-public sealed class GoalService(ApplicationDbContext dbContext, INotificationService notificationService) : IGoalService
+public sealed class GoalService(
+    ApplicationDbContext dbContext,
+    INotificationService notificationService,
+    AccountAccessService accountAccessService) : IGoalService
 {
     public async Task<IReadOnlyCollection<GoalDto>> ListAsync(Guid userId, CancellationToken cancellationToken)
     {
+        var accessibleAccountIds = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: true)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
         var goals = await dbContext.Goals
             .AsNoTracking()
-            .Where(x => x.UserId == userId)
+            .Where(x => x.UserId == userId || (x.LinkedAccountId.HasValue && accessibleAccountIds.Contains(x.LinkedAccountId.Value)))
             .Include(x => x.LinkedAccount)
             .OrderBy(x => x.Status)
             .ThenBy(x => x.TargetDateUtc)
             .ThenBy(x => x.Name)
             .ToListAsync(cancellationToken);
 
-        return goals.Select(MapGoal).ToList();
+        return goals.Select(goal => MapGoal(goal, goal.UserId == userId)).ToList();
     }
 
     public async Task<GoalDetailsDto?> GetAsync(Guid userId, Guid goalId, CancellationToken cancellationToken)
     {
+        var accessibleAccountIds = await accountAccessService.QueryAccessibleAccounts(userId, AccountMemberRole.Viewer, includeArchived: true)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
         var goal = await dbContext.Goals
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Id == goalId)
+            .Where(x => x.Id == goalId && (x.UserId == userId || (x.LinkedAccountId.HasValue && accessibleAccountIds.Contains(x.LinkedAccountId.Value))))
             .Include(x => x.LinkedAccount)
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -41,7 +52,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
 
         var entries = await dbContext.GoalEntries
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.GoalId == goalId)
+            .Where(x => x.GoalId == goalId)
             .Include(x => x.Account)
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.CreatedUtc)
@@ -57,7 +68,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
                 x.CreatedUtc))
             .ToListAsync(cancellationToken);
 
-        return new GoalDetailsDto(MapGoal(goal), entries);
+        return new GoalDetailsDto(MapGoal(goal, goal.UserId == userId), entries);
     }
 
     public async Task<GoalDto> CreateAsync(Guid userId, CreateGoalRequest request, CancellationToken cancellationToken)
@@ -80,7 +91,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
         dbContext.Goals.Add(goal);
         await dbContext.SaveChangesAsync(cancellationToken);
         goal.LinkedAccount = linkedAccount;
-        return MapGoal(goal);
+        return MapGoal(goal, true);
     }
 
     public async Task<GoalDto> UpdateAsync(Guid userId, Guid goalId, UpdateGoalRequest request, CancellationToken cancellationToken)
@@ -107,7 +118,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
         goal.Status = ResolveGoalStatus(goal.Status, goal.CurrentAmount, goal.TargetAmount);
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return MapGoal(goal);
+        return MapGoal(goal, true);
     }
 
     public Task<GoalDetailsDto> RecordContributionAsync(Guid userId, Guid goalId, RecordGoalEntryRequest request, CancellationToken cancellationToken)
@@ -136,7 +147,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
         goal.Status = GoalStatus.Completed;
         await dbContext.SaveChangesAsync(cancellationToken);
         await PublishGoalCompletedNotificationAsync(goal, cancellationToken);
-        return MapGoal(goal);
+        return MapGoal(goal, true);
     }
 
     public async Task<GoalDto> ArchiveAsync(Guid userId, Guid goalId, CancellationToken cancellationToken)
@@ -148,7 +159,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
 
         goal.Status = GoalStatus.Archived;
         await dbContext.SaveChangesAsync(cancellationToken);
-        return MapGoal(goal);
+        return MapGoal(goal, true);
     }
 
     private async Task<GoalDetailsDto> RecordEntryAsync(Guid userId, Guid goalId, RecordGoalEntryRequest request, GoalEntryType entryType, CancellationToken cancellationToken)
@@ -257,7 +268,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
         return currentAmount >= targetAmount ? GoalStatus.Completed : GoalStatus.Active;
     }
 
-    private static GoalDto MapGoal(Goal goal)
+    private static GoalDto MapGoal(Goal goal, bool canManage)
     {
         var remaining = decimal.Round(Math.Max(goal.TargetAmount - goal.CurrentAmount, 0m), 2, MidpointRounding.AwayFromZero);
         var progress = goal.TargetAmount == 0m ? 0m : decimal.Round((goal.CurrentAmount / goal.TargetAmount) * 100m, 2, MidpointRounding.AwayFromZero);
@@ -274,6 +285,7 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
             goal.Icon,
             goal.Color,
             goal.Status,
+            canManage,
             goal.CreatedUtc,
             goal.UpdatedUtc);
     }
@@ -281,3 +293,5 @@ public sealed class GoalService(ApplicationDbContext dbContext, INotificationSer
     private static decimal RoundMoney(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
     private static string? NormalizeNullable(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
+
+
