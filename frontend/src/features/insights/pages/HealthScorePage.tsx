@@ -71,6 +71,7 @@ export function HealthScorePage() {
   }
 
   const weakestFactors = useMemo(() => healthScore?.factors.filter((factor) => factor.score < 60) ?? [], [healthScore]);
+  const weakestFactor = weakestFactors[0] ?? null;
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.isArchived), [accounts]);
   const scopedAccounts = useMemo(() => filterAccountsForView(activeAccounts, sharedAccessView), [activeAccounts, sharedAccessView]);
   const sharedGuestAccounts = useMemo(() => scopedAccounts.filter((account) => account.isShared && account.currentUserRole !== "Owner"), [scopedAccounts]);
@@ -122,20 +123,20 @@ export function HealthScorePage() {
       {scopeMessage ? <Alert message={scopeMessage} variant="info" /> : null}
 
       <div className="stats-grid stats-grid--four">
-        <StatCard label="Overall score" value={`${healthScore.score}/100`} hint={healthScore.summary} tone={healthScore.score < 40 ? "negative" : healthScore.score >= 80 ? "positive" : undefined} />
-        <StatCard label="Band" value={healthScore.band} hint={healthScore.hasSparseData ? "Some factors use neutral fallback logic because recent data is limited." : "All factors are based on recorded balances, budgets, and transactions."} />
-        <StatCard label="Lookback start" value={formatDate(healthScore.lookbackStartUtc)} hint="The score uses the last three completed months for stability." />
-        <StatCard label="Lookback end" value={formatDate(healthScore.lookbackEndUtc)} hint={`${weakestFactors.length} factor${weakestFactors.length === 1 ? "" : "s"} currently need the most attention.`} />
+        <StatCard label="Overall score" value={`${healthScore.score}/100`} hint={`${healthScore.band} range`} tone={healthScore.score < 40 ? "negative" : healthScore.score >= 80 ? "positive" : undefined} />
+        <StatCard label="Band" value={healthScore.band} hint={healthScore.hasSparseData ? "Uses fallback where data is limited." : "Based on recorded balances and transactions."} />
+        <StatCard label="Lookback window" value={formatDate(healthScore.lookbackStartUtc)} hint={`to ${formatDate(healthScore.lookbackEndUtc)}`} />
+        <StatCard label="Weakest factor" value={weakestFactor?.title ?? "None"} hint={weakestFactor ? `${weakestFactors.length} factor${weakestFactors.length === 1 ? "" : "s"} under watch.` : "No factors currently need attention."} />
       </div>
 
       <section className="panel-card insights-summary-card">
         <div className="panel-card__header panel-card__header--inline">
           <div>
             <h3>Score summary</h3>
-            <p>{healthScore.summary}</p>
           </div>
           <span className={`status-badge status-badge--${bandTone[healthScore.band]}`}>{healthScore.band}</span>
         </div>
+        <p className="insights-summary-card__copy">{healthScore.summary}</p>
         {healthScore.hasSparseData ? (
           <Alert message="This score is still useful, but some factors are staying neutral because recent data is limited." variant="info" />
         ) : null}
@@ -193,4 +194,6 @@ export function HealthScorePage() {
     </div>
   );
 }
+
+
 

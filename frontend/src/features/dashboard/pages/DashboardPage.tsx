@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Bar, BarChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { useWorkspaceScope } from "../../../app/providers/WorkspaceScopeProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
 import { dashboardApi, type DashboardSummaryDto } from "../api/dashboardApi";
 import { forecastApi, type ForecastDailyResponseDto, type ForecastMonthSummaryDto } from "../../forecast/api/forecastApi";
 import { insightsApi, type HealthScoreResponseDto } from "../../insights/api/insightsApi";
+import { reportsApi, type ReportsTrendResponseDto } from "../../reports/api/reportsApi";
+import { BalanceForecastCard } from "../components/BalanceForecastCard";
 import { Alert } from "../../../shared/components/Alert";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { PageLoader } from "../../../shared/components/PageLoader";
@@ -26,12 +29,6 @@ const goalBadges: Record<string, string> = {
 };
 
 const spendingPalette = ["#00ADB5", "#F08F86", "#6F7D8C", "#A86523", "#7E57C2", "#4CAF50"];
-const forecastRiskTone: Record<string, "default" | "warning" | "danger"> = {
-  Low: "default",
-  Medium: "warning",
-  High: "danger",
-};
-
 export function DashboardPage() {
   const { accessToken } = useAuth();
   const { sharedAccessView } = useWorkspaceScope();
@@ -39,6 +36,7 @@ export function DashboardPage() {
   const [forecastMonth, setForecastMonth] = useState<ForecastMonthSummaryDto | null>(null);
   const [forecastDaily, setForecastDaily] = useState<ForecastDailyResponseDto | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScoreResponseDto | null>(null);
+  const [trendReport, setTrendReport] = useState<ReportsTrendResponseDto | null>(null);
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -62,24 +60,36 @@ export function DashboardPage() {
         setForecastMonth(null);
         setForecastDaily(null);
         setHealthScore(null);
+        setTrendReport(null);
         setErrorVariant("error");
         setErrorMessage(null);
         return;
       }
 
       const scopeQuery = scopedAccountIds.length > 0 ? { accountIds: scopedAccountIds } : undefined;
+      const trendStartDate = new Date();
+      trendStartDate.setMonth(trendStartDate.getMonth() - 5);
+      trendStartDate.setDate(1);
+      const trendQuery = {
+        startDateUtc: trendStartDate.toISOString(),
+        endDateUtc: new Date().toISOString(),
+        bucket: "Month" as const,
+        ...(scopeQuery ?? {}),
+      };
 
-      const [summaryResponse, forecastMonthResponse, forecastDailyResponse, healthScoreResponse] = await Promise.all([
+      const [summaryResponse, forecastMonthResponse, forecastDailyResponse, healthScoreResponse, trendResponse] = await Promise.all([
         dashboardApi.summary(accessToken, scopeQuery),
         forecastApi.month(accessToken, scopeQuery),
         forecastApi.daily(accessToken, scopeQuery),
         insightsApi.healthScore(accessToken, scopeQuery),
+        reportsApi.trends(accessToken, trendQuery),
       ]);
 
       setSummary(summaryResponse);
       setForecastMonth(forecastMonthResponse);
       setForecastDaily(forecastDailyResponse);
       setHealthScore(healthScoreResponse);
+      setTrendReport(trendResponse);
       setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
@@ -103,11 +113,6 @@ export function DashboardPage() {
   const accountCount = scopedActiveAccounts.length;
   const accountLookup = useMemo(() => new Map(scopedActiveAccounts.map((item) => [item.id, item])), [scopedActiveAccounts]);
   const maxSpend = useMemo(() => Math.max(...(summary?.spendingByCategory.map((item) => item.amount) ?? [0])), [summary]);
-  const maxAccountBalance = useMemo(() => Math.max(...(summary?.accountBalanceDistribution.map((item) => item.currentBalance) ?? [0])), [summary]);
-  const totalAccountBalance = useMemo(
-    () => summary?.accountBalanceDistribution.reduce((total, item) => total + item.currentBalance, 0) ?? 0,
-    [summary]
-  );
   const currentMonthIncome = summary?.currentMonthIncome ?? 0;
   const currentMonthExpense = summary?.currentMonthExpense ?? 0;
   const budgetUsage = summary?.budgetHealth.totalBudgeted
@@ -127,12 +132,14 @@ export function DashboardPage() {
     background: `conic-gradient(var(--color-success) 0deg ${(incomeShare / 100) * 360}deg, var(--color-danger) ${(incomeShare / 100) * 360}deg 360deg)`,
   };
 
-  const forecastPoints = forecastDaily?.points ?? [];
-  const forecastMaxBalance = useMemo(() => Math.max(...forecastPoints.map((point) => point.projectedBalance), forecastMonth?.currentBalance ?? 0), [forecastPoints, forecastMonth]);
-  const forecastMinBalance = useMemo(() => Math.min(...forecastPoints.map((point) => point.projectedBalance), forecastMonth?.currentBalance ?? 0), [forecastPoints, forecastMonth]);
-  const forecastRange = Math.max(forecastMaxBalance - forecastMinBalance, 1);
   const topRecurringItems = useMemo(() => forecastMonth?.upcomingRecurring.items.slice(0, 4) ?? [], [forecastMonth]);
   const projectedDelta = forecastMonth ? forecastMonth.projectedEndOfMonthBalance - forecastMonth.currentBalance : 0;
+  const cashflowTrendData = useMemo(() => trendReport?.incomeExpenseTrend.slice(-6).map((point) => ({
+    label: point.label,
+    income: point.income,
+    expense: point.expense,
+    net: point.income - point.expense,
+  })) ?? [], [trendReport]);
   const topHealthFactors = useMemo(
     () => [...(healthScore?.factors ?? [])].sort((left, right) => left.score - right.score).slice(0, 2),
     [healthScore]
@@ -176,7 +183,7 @@ export function DashboardPage() {
     );
   }
 
-  if (!summary || !forecastMonth || !forecastDaily || !healthScore) return <Alert message={errorMessage ?? "Dashboard is unavailable."} variant={errorVariant} />;
+  if (!summary || !forecastMonth || !forecastDaily || !healthScore || !trendReport) return <Alert message={errorMessage ?? "Dashboard is unavailable."} variant={errorVariant} />;
 
   const isFirstRun = accountCount === 0
     && summary.recentTransactions.length === 0
@@ -277,18 +284,8 @@ export function DashboardPage() {
 
               <div className="dashboard-summary-grid">
                 <StatCard label="Net balance" value={formatCurrency(summary.netBalance)} hint={`${accountCount} active accounts included.`} />
-                <StatCard
-                  label="Projected month-end balance"
-                  value={formatCurrency(forecastMonth.projectedEndOfMonthBalance)}
-                  hint={`${forecastMonth.daysRemainingInMonth} days left | ${forecastMonth.riskLevel} risk.`}
-                  tone={forecastMonth.projectedEndOfMonthBalance < 0 ? "negative" : projectedDelta >= 0 ? "positive" : undefined}
-                />
-                <StatCard
-                  label="Safe to spend this month"
-                  value={formatCurrency(forecastMonth.safeToSpend)}
-                  hint={forecastMonth.hasSparseData ? "Estimate based mostly on known recurring items because recent history is limited." : "Estimated amount you can still spend this month without likely going below zero."}
-                  tone={forecastMonth.safeToSpend <= 0 ? "negative" : "positive"}
-                />
+                
+               
                 <StatCard
                   label="Budget remaining"
                   value={formatCurrency(summary.budgetHealth.totalRemaining)}
@@ -311,60 +308,7 @@ export function DashboardPage() {
           </section>
 
           <section className="dashboard-section">
-            <div className="dashboard-flow">
-              <section className="panel-card panel-card--large dashboard-flow__item forecast-card">
-                <div className="panel-card__header">
-                  <h3>Balance forecast</h3>
-                  <p>Estimated day-by-day balance from today to month end using recent activity and known recurring items.</p>
-                </div>
-                <div className="forecast-summary-strip">
-                  <div>
-                    <span>Current</span>
-                    <strong>{formatCurrency(forecastMonth.currentBalance)}</strong>
-                  </div>
-                  <div>
-                    <span>Month-end</span>
-                    <strong>{formatCurrency(forecastMonth.projectedEndOfMonthBalance)}</strong>
-                  </div>
-                  <div>
-                    <span>Lowest point this month</span>
-                    <strong>{formatCurrency(forecastMonth.minimumProjectedBalance)}</strong>
-                  </div>
-                  <span className={`status-badge status-badge--${forecastRiskTone[forecastMonth.riskLevel]}`}>{forecastMonth.riskLevel} risk</span>
-                </div>
-                {forecastPoints.length === 0 ? (
-                  <EmptyState title="No forecast yet" description="Forecast projections appear once at least one active account is available." action={<Link to="/accounts" className="ghost-button">Add account</Link>} />
-                ) : (
-                  <>
-                    <div className="forecast-chart" aria-label="Projected daily balance through month end">
-                      {forecastPoints.map((point) => {
-                        const height = ((point.projectedBalance - forecastMinBalance) / forecastRange) * 100;
-                        const tone = point.projectedBalance < 0 ? "forecast-chart__bar--negative" : point.recurringNetChange < 0 ? "forecast-chart__bar--expense" : "forecast-chart__bar--default";
-
-                        return (
-                          <div key={point.dateUtc} className="forecast-chart__column" title={`${formatDate(point.dateUtc)}: ${formatCurrency(point.projectedBalance)}`}>
-                            <div className="forecast-chart__track">
-                              <div className={`forecast-chart__bar ${tone}`} style={{ height: `${Math.max(height, 8)}%` }} />
-                            </div>
-                            <small>{new Date(point.dateUtc).getDate()}</small>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="forecast-card__footer">
-                      <p>{forecastMonth.basisDescription}</p>
-                      <small>Estimate only. This shows where your balance may go during the rest of the month.</small>
-                    </div>
-                  </>
-                )}
-                {forecastMonth.notes.length > 0 ? (
-                  <div className="forecast-note-list">
-                    {forecastMonth.notes.map((note) => (
-                      <div key={note} className="forecast-note-list__item">{note}</div>
-                    ))}
-                  </div>
-                ) : null}
-              </section>
+            <div className="dashboard-flow">              <BalanceForecastCard forecastMonth={forecastMonth} forecastDaily={forecastDaily} />
 
               <section className="panel-card panel-card--compact dashboard-flow__item forecast-card">
                 <div className="panel-card__header">
@@ -375,27 +319,28 @@ export function DashboardPage() {
                   <EmptyState title="No upcoming recurring items" description="Active recurring rules due later this month will appear here." action={<Link to="/recurring" className="ghost-button">Create recurring rule</Link>} />
                 ) : (
                   <>
-                    <div className="health-tile-grid forecast-impact-grid">
-                      <div className="health-tile">
-                        <strong>{formatCurrency(forecastMonth.upcomingRecurring.totalExpectedIncome)}</strong>
-                        <span>Expected income</span>
+                    <div className="forecast-impact-summary">
+                      <div className="forecast-impact-summary__item">
+                        <span>Income due</span>
+                        <strong className="text-success">{formatCurrency(forecastMonth.upcomingRecurring.totalExpectedIncome)}</strong>
                       </div>
-                      <div className="health-tile">
-                        <strong>{formatCurrency(forecastMonth.upcomingRecurring.totalExpectedExpense)}</strong>
-                        <span>Expected expense</span>
+                      <div className="forecast-impact-summary__item">
+                        <span>Bills due</span>
+                        <strong className="text-danger">{formatCurrency(forecastMonth.upcomingRecurring.totalExpectedExpense)}</strong>
                       </div>
-                      <div className="health-tile">
-                        <strong>{formatCurrency(forecastMonth.upcomingRecurring.netExpectedImpact)}</strong>
-                        <span>Net impact</span>
+                      <div className="forecast-impact-summary__item">
+                        <span>Net effect</span>
+                        <strong className={forecastMonth.upcomingRecurring.netExpectedImpact < 0 ? "text-danger" : "text-success"}>{formatCurrency(forecastMonth.upcomingRecurring.netExpectedImpact)}</strong>
                       </div>
                     </div>
-                    <div className="simple-list">
+                    <div className="forecast-recurring-list">
                       {topRecurringItems.map((item) => (
-                        <div key={`${item.title}-${item.scheduledDateUtc}-${item.accountName}`} className="list-row list-row--stacked">
+                        <div key={`${item.title}-${item.scheduledDateUtc}-${item.accountName}`} className="forecast-recurring-item">
                           <div className="forecast-recurring-row">
-                            <div>
+                            <div className="forecast-recurring-row__copy">
                               <strong>{item.title}</strong>
-                              <p>{item.accountName} - {formatDate(item.scheduledDateUtc)}</p>
+                              <p>{item.accountName}</p>
+                              <small>{formatDate(item.scheduledDateUtc)}</small>
                             </div>
                             <strong className={item.type === "Expense" ? "text-danger" : "text-success"}>{formatCurrency(item.amount)}</strong>
                           </div>
@@ -550,16 +495,16 @@ export function DashboardPage() {
                       <span>{budgetUsage.toFixed(2)}% used</span>
                     </div>
                     <ProgressBar value={budgetUsage} tone={summary.budgetHealth.overBudgetCount > 0 ? "danger" : summary.budgetHealth.thresholdReachedCount > 0 ? "warning" : "default"} />
-                    <div className="health-tile-grid">
-                      <div className="health-tile">
+                    <div className="budget-health-metrics">
+                      <div className="budget-health-metric">
                         <strong>{formatCurrency(summary.budgetHealth.totalRemaining)}</strong>
                         <span>Remaining</span>
                       </div>
-                      <div className="health-tile">
+                      <div className="budget-health-metric">
                         <strong>{summary.budgetHealth.thresholdReachedCount}</strong>
                         <span>Warnings</span>
                       </div>
-                      <div className="health-tile">
+                      <div className="budget-health-metric">
                         <strong>{summary.budgetHealth.overBudgetCount}</strong>
                         <span>Over budget</span>
                       </div>
@@ -596,45 +541,56 @@ export function DashboardPage() {
 
               <section className="panel-card panel-card--medium dashboard-flow__item">
                 <div className="panel-card__header">
-                  <h3>Account balance split</h3>
-                  <p>Current balance distribution across active accounts.</p>
+                  <h3>Income, expense, and net flow</h3>
+                  <p>Recent monthly direction so you can see whether cashflow is improving or tightening.</p>
                 </div>
-                {summary.accountBalanceDistribution.length === 0 ? (
-                  <EmptyState title="No accounts available" description="Account balances will appear here once your ledgers are set up." action={<Link to="/accounts" className="ghost-button">Add account</Link>} />
+                {cashflowTrendData.length === 0 ? (
+                  <EmptyState title="No trend history yet" description="Trend analysis appears once enough recorded history exists in the selected view." action={<Link to="/reports" className="ghost-button">Open reports</Link>} />
                 ) : (
-                  <div className="balance-split">
-                    <div className="balance-split__track">
-                      {summary.accountBalanceDistribution.map((item) => (
-                        <span
-                          key={item.accountId}
-                          className="balance-split__segment"
-                          style={{ width: `${Math.max((item.currentBalance / (totalAccountBalance || 1)) * 100, 6)}%` }}
-                          title={`${item.accountName}: ${formatCurrency(item.currentBalance, item.currencyCode)}`}
-                        />
-                      ))}
+                  <>
+                    <div className="dashboard-trend-chart">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={cashflowTrendData} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
+                          <CartesianGrid stroke="rgba(231, 221, 212, 0.75)" vertical={false} />
+                          <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#6E625B", fontSize: 12 }} />
+                          <YAxis tickLine={false} axisLine={false} tick={{ fill: "#6E625B", fontSize: 12 }} tickFormatter={(value: number) => formatCurrency(value)} width={80} />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload || payload.length === 0) {
+                                return null;
+                              }
+
+                              const point = payload[0]?.payload as { income: number; expense: number; net: number } | undefined;
+                              if (!point) {
+                                return null;
+                              }
+
+                              return (
+                                <div className="forecast-tooltip">
+                                  <strong>{label}</strong>
+                                  <small>Income {formatCurrency(point.income)}</small>
+                                  <small>Expense {formatCurrency(point.expense)}</small>
+                                  <p>Net {formatCurrency(point.net)}</p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Bar dataKey="income" name="Income" radius={[7, 7, 0, 0]} fill="#0B9DA4" />
+                          <Bar dataKey="expense" name="Expense" radius={[7, 7, 0, 0]} fill="#D26B6B" />
+                          <Line type="monotone" dataKey="net" name="Net" stroke="#4B2E2B" strokeWidth={2.2} dot={{ r: 3 }} />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
-                    <div className="chart-list">
-                      {summary.accountBalanceDistribution.map((item) => (
-                        <div key={item.accountId} className="chart-row">
-                          <div className="chart-row__label">
-                            <div>
-                              <span>{item.accountName}</span>
-                              {accountLookup.get(item.accountId)?.isShared ? (
-                                <small>Shared | {accountLookup.get(item.accountId)?.currentUserRole} | Owner {accountLookup.get(item.accountId)?.ownerDisplayName}</small>
-                              ) : null}
-                            </div>
-                            <div className="chart-row__value">
-                              <strong>{formatCurrency(item.currentBalance, item.currencyCode)}</strong>
-                              <small>{((item.currentBalance / (totalAccountBalance || 1)) * 100).toFixed(1)}%</small>
-                            </div>
-                          </div>
-                          <div className="chart-bar chart-bar--muted">
-                            <div className="chart-bar__fill chart-bar__fill--secondary" style={{ width: `${(item.currentBalance / (maxAccountBalance || 1)) * 100}%` }} />
-                          </div>
+                    <div className="dashboard-trend-summary">
+                      {cashflowTrendData.slice(-3).map((point) => (
+                        <div key={point.label} className="dashboard-trend-summary__item">
+                          <span>{point.label}</span>
+                          <strong>{formatCurrency(point.net)}</strong>
+                          <small>{point.net >= 0 ? "Net positive" : "Net negative"}</small>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </>
                 )}
               </section>
 
@@ -677,6 +633,18 @@ export function DashboardPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

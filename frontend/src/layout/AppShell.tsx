@@ -16,7 +16,7 @@ const navigationItems = [
   { to: "/categories", label: "Categories" },
   { to: "/budgets", label: "Budgets" },
   { to: "/goals", label: "Goals" },
-  { to: "/insights/health-score", label: "Insights" },
+  { to: "/insights", label: "Insights" },
   { to: "/rules", label: "Rules" },
   { to: "/reports", label: "Reports" },
   { to: "/recurring", label: "Recurring" },
@@ -281,6 +281,7 @@ export function AppShell() {
     </div>
   );
 }
+
 
 
 

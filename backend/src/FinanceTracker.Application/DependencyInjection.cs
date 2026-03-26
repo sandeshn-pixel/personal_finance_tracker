@@ -49,9 +49,12 @@ public static class DependencyInjection
         services.AddScoped<IValidator<BudgetMonthQuery>, BudgetMonthQueryValidator>();
         services.AddScoped<IValidator<CopyBudgetsRequest>, CopyBudgetsRequestValidator>();
         services.AddScoped<IValidator<ReportQuery>, ReportQueryValidator>();
+        services.AddScoped<IValidator<ReportTrendsQuery>, ReportTrendsQueryValidator>();
+        services.AddScoped<IValidator<ReportNetWorthQuery>, ReportNetWorthQueryValidator>();
         services.AddScoped<IValidator<DashboardQuery>, DashboardQueryValidator>();
         services.AddScoped<IValidator<ForecastQuery>, ForecastQueryValidator>();
         services.AddScoped<IValidator<HealthScoreQuery>, HealthScoreQueryValidator>();
+        services.AddScoped<IValidator<InsightsQuery>, InsightsQueryValidator>();
         services.AddScoped<IValidator<UpsertTransactionRuleRequest>, UpsertTransactionRuleRequestValidator>();
         services.AddScoped<IValidator<CreateGoalRequest>, CreateGoalRequestValidator>();
         services.AddScoped<IValidator<UpdateGoalRequest>, UpdateGoalRequestValidator>();

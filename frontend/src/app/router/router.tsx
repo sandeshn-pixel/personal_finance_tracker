@@ -12,6 +12,7 @@ import { CategoriesPage } from "../../features/categories/pages/CategoriesPage";
 import { DashboardPage } from "../../features/dashboard/pages/DashboardPage";
 import { GoalsPage } from "../../features/goals/pages/GoalsPage";
 import { HealthScorePage } from "../../features/insights/pages/HealthScorePage";
+import { InsightsPage } from "../../features/insights/pages/InsightsPage";
 import { NotificationsPage } from "../../features/notifications/pages/NotificationsPage";
 import { ReportsPage } from "../../features/reports/pages/ReportsPage";
 import { RecurringTransactionsPage } from "../../features/recurring/pages/RecurringTransactionsPage";
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
           { path: "/categories", element: <CategoriesPage /> },
           { path: "/budgets", element: <BudgetsPage /> },
           { path: "/goals", element: <GoalsPage /> },
+          { path: "/insights", element: <InsightsPage /> },
           { path: "/insights/health-score", element: <HealthScorePage /> },
           { path: "/rules", element: <RulesPage /> },
           { path: "/reports", element: <ReportsPage /> },

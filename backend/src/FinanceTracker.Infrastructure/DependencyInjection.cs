@@ -64,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IForecastService, ForecastService>();
         services.AddScoped<IHealthScoreService, HealthScoreService>();
+        services.AddScoped<IInsightsService, InsightsService>();
         services.AddScoped<IRuleService, RuleService>();
         services.AddScoped<ITransactionRuleEvaluator, TransactionRuleEvaluator>();
         services.AddScoped<ISettingsService, SettingsService>();

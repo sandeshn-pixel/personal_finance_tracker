@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -185,7 +186,7 @@ export function ReportsPage() {
 
   const sharedContextMessage = useMemo(() => {
     if (selectedAccount?.isShared) {
-      return `This report is scoped to the shared account ${selectedAccount.name}. Category spend, merchants, and balance checkpoints include activity visible through that shared account. Your role is ${selectedAccount.currentUserRole}.`;
+      return `This report is scoped to the shared account ${selectedAccount.name}. Category spend, merchants, and balances include activity visible through that shared account. Your role is ${selectedAccount.currentUserRole}.`;
     }
 
     if (reportView === "shared" && visibleAccounts.length > 0) {
@@ -204,20 +205,9 @@ export function ReportsPage() {
     return null;
   }, [activeAccounts, reportView, selectedAccount, selectedAccountId, showSharedViewToggle, visibleAccounts]);
 
-  const sharedReportSuffix = selectedAccount?.isShared
-    ? " Includes activity visible through this shared account."
-    : reportView === "shared" && visibleAccounts.length > 0
-      ? " Focused on shared-account activity only."
-      : reportView === "mine" && showSharedViewToggle
-        ? " Focused on your own accounts only."
-        : reportView === "all" && activeAccounts.some((account) => account.isShared)
-          ? " May include visible shared-account activity."
-          : "";
-
   const categorySpendMax = Math.max(...(overview?.categorySpend.map((item) => item.amount) ?? [0]));
   const categorySpendTotal = overview?.categorySpend.reduce((sum, item) => sum + item.amount, 0) ?? 0;
   const topMerchantMax = Math.max(...(overview?.topMerchants.map((item) => item.amount) ?? [0]));
-  const balanceMax = Math.max(...(overview?.accountBalanceTrend.map((item) => Math.abs(item.balance)) ?? [0]));
 
   if (loading && !overview) {
     return <PageLoader label="Loading reports" />;
@@ -225,7 +215,11 @@ export function ReportsPage() {
 
   return (
     <div className="page-stack">
-      <SectionHeader title="Reports" description="Server-aggregated summaries, period comparison, top merchants, and cleaner trend analysis." />
+      <SectionHeader
+        title="Reports"
+        description="Structured summaries and export-ready breakdowns for the selected period. Use Insights for deeper visual analysis and trend interpretation."
+        action={<Link to="/insights" className="ghost-button">Open insights</Link>}
+      />
       {errorMessage ? <Alert message={errorMessage} variant={errorVariant} /> : null}
       {sharedContextMessage ? (
         <div className="page-context-row">
@@ -262,16 +256,41 @@ export function ReportsPage() {
           </Field>
         </FilterRow>
       </form>
-            {overview ? (
+      {overview ? (
         <>
           <div className="stats-grid stats-grid--four">
             <StatCard label="Total income" value={formatCurrency(overview.summary.totalIncome)} hint={formatDelta(overview.summary.totalIncome, overview.comparison.previousTotalIncome, "income")} tone="positive" />
             <StatCard label="Total expense" value={formatCurrency(overview.summary.totalExpense)} hint={formatDelta(overview.summary.totalExpense, overview.comparison.previousTotalExpense, "expense")} tone="negative" />
             <StatCard label="Net cash flow" value={formatCurrency(overview.summary.netCashFlow)} hint={formatDelta(overview.summary.netCashFlow, overview.comparison.previousNetCashFlow, "net cash flow")} tone={overview.summary.netCashFlow < 0 ? "negative" : "positive"} />
-            <StatCard label="Coverage" value={`${overview.categorySpend.length} categories`} hint={`${overview.topMerchants.length} top merchants highlighted in this range.${sharedContextMessage ? " Shared data context is active." : ""}`} />
+            <StatCard label="Coverage" value={`${overview.categorySpend.length} categories`} hint={`${overview.topMerchants.length} merchants in this range.`} />
           </div>
+
+          <section className="panel-card">
+            <div className="panel-card__header panel-card__header--inline">
+              <div>
+                <h3>Report snapshot</h3>
+                <p>A practical overview for review, export, and month-over-month comparison.</p>
+              </div>
+              <Link to="/insights" className="ghost-button ghost-button--small">See advanced trends</Link>
+            </div>
+            <div className="dashboard-limits-grid">
+              <div className="dashboard-mini-stat">
+                <span>Previous income</span>
+                <strong>{formatCurrency(overview.comparison.previousTotalIncome)}</strong>
+              </div>
+              <div className="dashboard-mini-stat">
+                <span>Previous expense</span>
+                <strong>{formatCurrency(overview.comparison.previousTotalExpense)}</strong>
+              </div>
+              <div className="dashboard-mini-stat">
+                <span>Previous net</span>
+                <strong>{formatCurrency(overview.comparison.previousNetCashFlow)}</strong>
+              </div>
+            </div>
+          </section>
+
           <div className="reports-grid reports-grid--equal">
-            <ChartCard title="Category spend" description={`Expense share by category for the selected period.${sharedReportSuffix}`}>
+            <ChartCard title="Category spend" description="Expense share by category for the selected period.">
               {overview.categorySpend.length === 0 ? (
                 <EmptyState title="No expense data" description="Category spend appears once expense transactions exist in the selected range." />
               ) : (
@@ -294,7 +313,8 @@ export function ReportsPage() {
                 </div>
               )}
             </ChartCard>
-            <ChartCard title="Top merchants" description={`Highest-spend payees for the selected period.${sharedReportSuffix}`}>
+
+            <ChartCard title="Top merchants" description="Highest-spend payees for the selected period.">
               {overview.topMerchants.length === 0 ? (
                 <EmptyState title="No merchant insight yet" description="Merchant spend appears once expense transactions include merchant names." />
               ) : (
@@ -314,66 +334,9 @@ export function ReportsPage() {
                 </div>
               )}
             </ChartCard>
-            <ChartCard title="Income vs expense trend" description={`Bucketed cashflow comparison across the selected period.${sharedReportSuffix}`}>
-              {overview.incomeExpenseTrend.length === 0 ? (
-                <EmptyState title="No trend data" description="The trend summary appears once transactions fall within the selected range." />
-              ) : (
-                <div className="trend-list">
-                  {overview.incomeExpenseTrend.map((point) => {
-                    const bucketMax = Math.max(point.income, point.expense, 1);
-                    const net = point.income - point.expense;
-                    return (
-                      <div key={point.periodStartUtc} className="trend-row">
-                        <div className="trend-row__label">
-                          <strong>{point.label}</strong>
-                          <span className={`trend-pill ${net < 0 ? "trend-pill--negative" : ""}`}>{formatCurrency(net)} net</span>
-                        </div>
-                        <div className="trend-bars">
-                          <div>
-                            <span>Income</span>
-                            <ProgressBar value={(point.income / bucketMax) * 100} tone="default" />
-                          </div>
-                          <div>
-                            <span>Expense</span>
-                            <ProgressBar value={(point.expense / bucketMax) * 100} tone="danger" />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </ChartCard>
-            <ChartCard title="Account balance trend" description={`Closing-balance checkpoints across the selected period.${sharedReportSuffix}`}>
-              {overview.accountBalanceTrend.length === 0 ? (
-                <EmptyState title="No balance history" description="Balance trend points appear when an account exists for the selected filter." />
-              ) : (
-                <div className="trend-list">
-                  {overview.accountBalanceTrend.map((point) => (
-                    <div key={point.periodStartUtc} className="trend-row">
-                      <div className="trend-row__label">
-                        <strong>{point.label}</strong>
-                        <span>{formatCurrency(point.balance)}</span>
-                      </div>
-                      <ProgressBar value={(Math.abs(point.balance) / (balanceMax || 1)) * 100} tone={point.balance < 0 ? "danger" : "default"} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ChartCard>
           </div>
         </>
       ) : null}
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-

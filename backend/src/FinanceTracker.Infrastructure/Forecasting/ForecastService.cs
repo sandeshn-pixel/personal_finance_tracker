@@ -282,10 +282,6 @@ public sealed class ForecastService(
             notes.Add("The forecast expects balances to move below zero before month end.");
         }
 
-        if (!hasSparseData && projectedEndBalance > currentBalance)
-        {
-            notes.Add("Recent cashflow trends and known recurring items point to a higher month-end balance than today.");
-        }
 
         return notes;
     }
