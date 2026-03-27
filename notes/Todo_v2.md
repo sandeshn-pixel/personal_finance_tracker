@@ -4,6 +4,9 @@ Here’s your **clean, actionable V2 TODO roadmap (for .NET 8 backend + React fr
 
 ---
 
+notification
+top bar better for small screen
+Icons
 
 # PRODUCTION DEPLOYMENT / MIGRATION RULES
 

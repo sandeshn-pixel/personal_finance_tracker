@@ -10,7 +10,7 @@ namespace FinanceTracker.Api.Controllers;
 
 [ApiController]
 [Authorize]
-[EnableRateLimiting("ReportHeavy")]
+[EnableRateLimiting("WorkspaceUi")]
 [Route("api/reports")]
 public sealed class ReportsController(
     IReportService reportService,
@@ -34,6 +34,7 @@ public sealed class ReportsController(
     }
 
     [HttpGet("trends")]
+    [EnableRateLimiting("InsightsRead")]
     public async Task<IActionResult> Trends([FromQuery] ReportTrendsQuery query, CancellationToken cancellationToken)
     {
         var validationProblem = await ValidateAsync(reportTrendsQueryValidator, query, cancellationToken);
@@ -48,6 +49,7 @@ public sealed class ReportsController(
     }
 
     [HttpGet("net-worth")]
+    [EnableRateLimiting("InsightsRead")]
     public async Task<IActionResult> NetWorth([FromQuery] ReportNetWorthQuery query, CancellationToken cancellationToken)
     {
         var validationProblem = await ValidateAsync(reportNetWorthQueryValidator, query, cancellationToken);

@@ -137,6 +137,7 @@ export function InsightsPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
+  const [filtersReady, setFiltersReady] = useState(false);
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<InsightsFormValues>({
     resolver: zodResolver(insightsSchema),
@@ -150,10 +151,11 @@ export function InsightsPage() {
   });
 
   useEffect(() => { void bootstrap(); }, [accessToken]);
-  useEffect(() => { void loadInsights(); }, [accessToken, sharedAccessView, accounts]);
+  useEffect(() => { if (filtersReady) { void loadInsights(); } }, [accessToken, sharedAccessView, filtersReady]);
 
   async function bootstrap() {
     if (!accessToken) return;
+    setFiltersReady(false);
     try {
       const [accountResponse, categoryResponse] = await Promise.all([
         accountsApi.list(accessToken),
@@ -163,6 +165,7 @@ export function InsightsPage() {
       setCategories(categoryResponse.filter((category) => category.type === "Expense"));
       setErrorVariant("error");
       setErrorMessage(null);
+      setFiltersReady(true);
     } catch (error) {
       if (error instanceof ApiError && error.status === 429) {
         setErrorVariant("info");
@@ -204,6 +207,10 @@ export function InsightsPage() {
     setLoading(true);
     try {
       const activeValues = values ?? watch();
+      if (!filtersReady) {
+        return;
+      }
+
       if (sharedAccessView !== "all" && !activeValues.accountId && visibleAccounts.length === 0) {
         setInsights(null);
         setTrends(null);
@@ -224,6 +231,7 @@ export function InsightsPage() {
       setNetWorth(netWorthResponse);
       setErrorVariant("error");
       setErrorMessage(null);
+      setFiltersReady(true);
     } catch (error) {
       if (error instanceof ApiError && error.status === 429) {
         setErrorVariant("info");

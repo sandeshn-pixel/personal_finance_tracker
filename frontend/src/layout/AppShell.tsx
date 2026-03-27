@@ -109,34 +109,51 @@ export function AppShell() {
       return;
     }
 
-    if (!isNotificationsOpen) {
-      setLoadingNotifications(true);
-      try {
-        const [feedResult, accountsResult] = await Promise.allSettled([
-          notificationsApi.list(accessToken, false, 8),
-          accountsApi.list(accessToken),
-        ]);
-
-        if (feedResult.status === "fulfilled") {
-          setNotificationFeed(feedResult.value);
-          setNotificationError(null);
-        } else {
-          const error = feedResult.reason;
-          setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
-        }
-
-        if (accountsResult.status === "fulfilled") {
-          const accounts = accountsResult.value;
-          setWorkspaceAccounts(accounts);
-          setOwnedPendingInviteCount(accounts.reduce((sum, item) => sum + item.pendingInviteCount, 0));
-          setFirstPendingInviteAccountId(accounts.find((item) => item.pendingInviteCount > 0)?.id ?? null);
-        }
-      } finally {
-        setLoadingNotifications(false);
-      }
+    if (isNotificationsOpen) {
+      setIsNotificationsOpen(false);
+      return;
     }
 
-    setIsNotificationsOpen((current) => !current);
+    setLoadingNotifications(true);
+    try {
+      const [feedResult, accountsResult] = await Promise.allSettled([
+        notificationsApi.list(accessToken, false, 8),
+        accountsApi.list(accessToken),
+      ]);
+
+      if (feedResult.status === "fulfilled") {
+        const nextFeed = feedResult.value;
+        if (nextFeed.unreadCount > 0) {
+          try {
+            await notificationsApi.markAllRead(accessToken);
+            setNotificationFeed({
+              unreadCount: 0,
+              items: nextFeed.items.map((item) => ({ ...item, isRead: true, readAtUtc: item.readAtUtc ?? new Date().toISOString() })),
+            });
+          } catch {
+            setNotificationFeed(nextFeed);
+            setNotificationError("Notifications opened, but read state could not be updated right now.");
+          }
+        } else {
+          setNotificationFeed(nextFeed);
+        }
+        setNotificationError(null);
+      } else {
+        const error = feedResult.reason;
+        setNotificationError(error instanceof ApiError ? error.message : "Unable to load notifications.");
+      }
+
+      if (accountsResult.status === "fulfilled") {
+        const accounts = accountsResult.value;
+        setWorkspaceAccounts(accounts);
+        setOwnedPendingInviteCount(accounts.reduce((sum, item) => sum + item.pendingInviteCount, 0));
+        setFirstPendingInviteAccountId(accounts.find((item) => item.pendingInviteCount > 0)?.id ?? null);
+      }
+
+      setIsNotificationsOpen(true);
+    } finally {
+      setLoadingNotifications(false);
+    }
   }
 
   async function markAllNotificationsRead() {
@@ -205,7 +222,13 @@ export function AppShell() {
       <div className="shell-main">
         <header className="topbar">
           <div className="topbar-title-group">
-            <button type="button" className="ghost-button mobile-nav-toggle" onClick={() => setIsSidebarOpen((current) => !current)} aria-label="Toggle navigation menu" aria-expanded={isSidebarOpen} aria-controls="primary-navigation">Menu</button>
+            <button type="button" className="ghost-button mobile-nav-toggle" onClick={() => setIsSidebarOpen((current) => !current)} aria-label="Toggle navigation menu" aria-expanded={isSidebarOpen} aria-controls="primary-navigation">
+              <span className="mobile-nav-toggle__icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </button>
             <div>
               <p className="eyebrow">Authenticated workspace</p>
               <h1 className="topbar-title">Welcome, {user?.firstName}</h1>
@@ -231,7 +254,12 @@ export function AppShell() {
                 aria-expanded={isNotificationsOpen}
                 aria-label="Open notifications"
               >
-                <span aria-hidden="true">Alerts</span>
+                <span className="notification-button__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                    <path d="M10 20a2 2 0 0 0 4 0" />
+                  </svg>
+                </span>
                 {notificationFeed.unreadCount > 0 ? <span className="notification-count">{notificationFeed.unreadCount}</span> : null}
               </button>
               {isNotificationsOpen ? (

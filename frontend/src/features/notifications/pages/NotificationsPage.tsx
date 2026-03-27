@@ -5,6 +5,7 @@ import { Alert } from "../../../shared/components/Alert";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { PageLoader } from "../../../shared/components/PageLoader";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
+import { StatCard } from "../../../shared/components/StatCard";
 import { ApiError } from "../../../shared/lib/api/client";
 import { formatDate } from "../../../shared/lib/format";
 import { notificationsApi, type NotificationDto, type NotificationFeedDto } from "../api/notificationsApi";
@@ -68,6 +69,11 @@ export function NotificationsPage() {
     [feed],
   );
 
+  const unreadItems = useMemo(
+    () => feed?.items.filter((item) => !item.isRead) ?? [],
+    [feed],
+  );
+
   const generalItems = useMemo(
     () => feed?.items.filter((item) => item.type !== "SharedAccountInvite") ?? [],
     [feed],
@@ -77,7 +83,7 @@ export function NotificationsPage() {
   if (!feed && errorMessage) return <Alert message={errorMessage} />;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack notifications-page">
       <SectionHeader
         title="Notifications"
         description="Review reminders, automation outcomes, shared-account invites, and goal updates in one place."
@@ -91,11 +97,30 @@ export function NotificationsPage() {
       />
       {errorMessage ? <Alert message={errorMessage} /> : null}
 
+      <div className="stats-grid stats-grid--three notifications-summary-grid">
+        <StatCard
+          label="Unread now"
+          value={String(feed?.unreadCount ?? 0)}
+          hint={unreadOnly ? "Unread-only view is active." : "Unread items across your current feed."}
+          tone={(feed?.unreadCount ?? 0) > 0 ? "positive" : undefined}
+        />
+        <StatCard
+          label="Invite updates"
+          value={String(inviteItems.length)}
+          hint="Shared-account invite events in this feed."
+        />
+        <StatCard
+          label="Loaded items"
+          value={String(feed?.items.length ?? 0)}
+          hint="Notifications currently visible in this page view."
+        />
+      </div>
+
       <section className="panel-card notifications-history-card">
         <div className="panel-card__header panel-card__header--inline">
           <div>
             <h3>My invites</h3>
-            <p>{inviteItems.length} shared-account invite notification{inviteItems.length === 1 ? "" : "s"} in your current feed.</p>
+            <p>Invite activity and account-sharing updates that deserve quick review.</p>
           </div>
           <button type="button" className="ghost-button ghost-button--small" onClick={() => void load(unreadOnly)}>Refresh</button>
         </div>
@@ -115,9 +140,12 @@ export function NotificationsPage() {
             >
               <span className={`notification-dot notification-dot--${notification.level.toLowerCase()}`} aria-hidden="true" />
               <span className="notification-item__content">
+                <span className="notification-item__meta">
+                  <small>{formatDate(notification.createdUtc)}</small>
+                  <small>{notification.route ? "Opens invite flow" : "In-app update"}</small>
+                </span>
                 <strong>{notification.title}</strong>
                 <span>{notification.message}</span>
-                <small>{formatDate(notification.createdUtc)}{notification.route ? ` | Opens invite flow` : ""}</small>
               </span>
               <span className={`status-badge ${notification.isRead ? "status-badge--warning" : "status-badge--default"}`}>{notification.isRead ? "Read" : "New"}</span>
             </button>
@@ -128,8 +156,8 @@ export function NotificationsPage() {
       <section className="panel-card notifications-history-card">
         <div className="panel-card__header panel-card__header--inline">
           <div>
-            <h3>Notification history</h3>
-            <p>{feed?.unreadCount ?? 0} unread notification{feed?.unreadCount === 1 ? "" : "s"} in your current feed.</p>
+            <h3>{unreadOnly ? "Unread activity" : "Notification history"}</h3>
+            <p>{unreadOnly ? `${unreadItems.length} unread notification${unreadItems.length === 1 ? "" : "s"} still need review.` : "A chronological view of reminders, automation outcomes, and progress updates."}</p>
           </div>
           <button type="button" className="ghost-button ghost-button--small" onClick={() => void load(unreadOnly)}>Refresh</button>
         </div>
@@ -149,9 +177,12 @@ export function NotificationsPage() {
             >
               <span className={`notification-dot notification-dot--${notification.level.toLowerCase()}`} aria-hidden="true" />
               <span className="notification-item__content">
+                <span className="notification-item__meta">
+                  <small>{formatDate(notification.createdUtc)}</small>
+                  <small>{notification.route ? `Opens ${notification.route}` : "No linked route"}</small>
+                </span>
                 <strong>{notification.title}</strong>
                 <span>{notification.message}</span>
-                <small>{formatDate(notification.createdUtc)}{notification.route ? ` | Opens ${notification.route}` : ""}</small>
               </span>
               <span className={`status-badge ${notification.isRead ? "status-badge--warning" : "status-badge--default"}`}>{notification.isRead ? "Read" : "New"}</span>
             </button>

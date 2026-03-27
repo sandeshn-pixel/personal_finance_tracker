@@ -138,8 +138,9 @@ export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceFor
             <strong>{explanation}</strong>
           </div>
 
-          <div className="forecast-line-chart-wrap" aria-label="Projected daily balance through month end">
-            <ResponsiveContainer width="100%" height={280}>
+          <div className="forecast-chart-block">
+            <div className="forecast-line-chart-wrap" aria-label="Projected daily balance through month end">
+              <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 8, left: 4 }}>
                 <CartesianGrid stroke="rgba(231, 221, 212, 0.75)" vertical={false} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#6E625B", fontSize: 12 }} />
@@ -189,12 +190,13 @@ export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceFor
                 <ReferenceDot x={lowestPoint.label} y={lowestPoint.projectedBalance} r={5} fill="#C85C46" stroke="#FFF8F0" strokeWidth={2} />
               </ComposedChart>
             </ResponsiveContainer>
-          </div>
+            </div>
 
-          <div className="forecast-chart-legend">
-            <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--current" />Current</span>
-            <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--end" />Month end</span>
-            <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--lowest" />Lowest point</span>
+            <div className="forecast-chart-legend">
+              <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--current" />Current</span>
+              <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--end" />Month end</span>
+              <span><i className="forecast-chart-legend__dot forecast-chart-legend__dot--lowest" />Lowest point</span>
+            </div>
           </div>
 
           <div className="forecast-upcoming-bills">
