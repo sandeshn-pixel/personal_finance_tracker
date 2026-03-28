@@ -710,6 +710,9 @@ public sealed class SettingsService(
         });
     }
 
+    private static decimal RoundMoney(decimal value)
+        => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+
     private sealed record SeedAccountsSelection(Account Primary, Account Savings, Account Wallet, int AccountsCreated);
     private sealed record BudgetSeedTemplate(string CategoryName, Func<decimal, decimal> ResolveAmount, int AlertThresholdPercent);
 }
