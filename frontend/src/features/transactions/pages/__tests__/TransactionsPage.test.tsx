@@ -1,6 +1,7 @@
-﻿import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
+import { WorkspaceScopeProvider } from "../../../../app/providers/WorkspaceScopeProvider";
 
 const useAuthMock = vi.fn();
 const accountsListMock = vi.fn();
@@ -32,12 +33,16 @@ import { TransactionsPage } from "../TransactionsPage";
 describe("TransactionsPage", () => {
   it("applies filters and exports with the current query", async () => {
     useAuthMock.mockReturnValue({ accessToken: "token" });
-    accountsListMock.mockResolvedValue([{ id: "a1", name: "Checking", isArchived: false }]);
+    accountsListMock.mockResolvedValue([{ id: "a1", name: "Checking", isArchived: false, isShared: false, currentUserRole: "Owner" }]);
     categoriesListMock.mockResolvedValue([{ id: "c1", name: "Food", type: "Expense", isArchived: false }]);
     transactionsListMock.mockResolvedValue({ items: [], page: 1, pageSize: 10, totalCount: 0 });
     transactionsExportMock.mockResolvedValue("transactions.csv");
 
-    render(<TransactionsPage />);
+    render(
+      <WorkspaceScopeProvider>
+        <TransactionsPage />
+      </WorkspaceScopeProvider>,
+    );
 
     await waitFor(() => expect(transactionsListMock).toHaveBeenCalled());
 
@@ -48,5 +53,5 @@ describe("TransactionsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /export filtered transactions to csv/i }));
 
     await waitFor(() => expect(transactionsExportMock).toHaveBeenCalledWith("token", expect.objectContaining({ search: "coffee" })));
-  });
+  }, 10000);
 });

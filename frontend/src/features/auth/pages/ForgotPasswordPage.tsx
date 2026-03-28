@@ -54,6 +54,7 @@ export function ForgotPasswordPage() {
       <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
         {errorMessage ? <Alert message={errorMessage} /> : null}
         {response ? <Alert message={response.message} /> : null}
+        {response?.debugStatus ? <Alert message={response.debugStatus} variant="info" /> : null}
         <Field label="Email" error={errors.email?.message} hint="We will never reveal whether this email exists. In development, a direct reset link may appear if mail delivery is turned off.">
           <input {...register("email")} type="email" autoComplete="email" placeholder="name@company.com" />
         </Field>

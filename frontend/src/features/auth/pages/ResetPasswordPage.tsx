@@ -7,6 +7,7 @@ import { authApi } from "../api/authApi";
 import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/components/Button";
 import { Field } from "../../../shared/components/Field";
+import { PasswordField } from "../../../shared/components/PasswordField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { AuthCard } from "../components/AuthCard";
 
@@ -42,6 +43,8 @@ export function ResetPasswordPage() {
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { newPassword: "", confirmPassword: "" },
   });
+  const newPasswordField = register("newPassword");
+  const confirmPasswordField = register("confirmPassword");
 
   async function onSubmit(values: ResetPasswordFormValues) {
     if (!hasResetContext) {
@@ -79,10 +82,10 @@ export function ResetPasswordPage() {
           <input value={email} disabled readOnly />
         </Field>
         <Field label="New password" error={errors.newPassword?.message} hint="Use 12+ characters with upper, lower, number, and symbol.">
-          <input {...register("newPassword")} type="password" autoComplete="new-password" placeholder="Create a strong password" />
+          <PasswordField {...newPasswordField} inputRef={newPasswordField.ref} autoComplete="new-password" placeholder="Create a strong password" toggleLabel="new password" />
         </Field>
         <Field label="Confirm password" error={errors.confirmPassword?.message}>
-          <input {...register("confirmPassword")} type="password" autoComplete="new-password" placeholder="Re-enter your password" />
+          <PasswordField {...confirmPasswordField} inputRef={confirmPasswordField.ref} autoComplete="new-password" placeholder="Re-enter your password" toggleLabel="password confirmation" />
         </Field>
         <Button type="submit" loading={isSubmitting} disabled={!hasResetContext}>Reset password</Button>
         {successMessage ? <Link to="/login">Back to sign in</Link> : null}

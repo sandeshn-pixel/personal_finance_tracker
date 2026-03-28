@@ -7,6 +7,7 @@ import { useAuth } from "../../../app/providers/AuthProvider";
 import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/components/Button";
 import { Field } from "../../../shared/components/Field";
+import { PasswordField } from "../../../shared/components/PasswordField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { AuthCard } from "../components/AuthCard";
 
@@ -53,6 +54,8 @@ export function SignupPage() {
       confirmPassword: "",
     },
   });
+  const passwordField = register("password");
+  const confirmPasswordField = register("confirmPassword");
 
   async function onSubmit(values: SignupFormValues) {
     setErrorMessage(null);
@@ -101,10 +104,10 @@ export function SignupPage() {
           <input {...register("email")} type="email" autoComplete="email" placeholder="name@company.com" />
         </Field>
         <Field label="Password" error={errors.password?.message} hint="Use 12+ characters with upper, lower, number, and symbol.">
-          <input {...register("password")} type="password" autoComplete="new-password" placeholder="Create a strong password" />
+          <PasswordField {...passwordField} inputRef={passwordField.ref} autoComplete="new-password" placeholder="Create a strong password" toggleLabel="password" />
         </Field>
         <Field label="Confirm password" error={errors.confirmPassword?.message}>
-          <input {...register("confirmPassword")} type="password" autoComplete="new-password" placeholder="Re-enter your password" />
+          <PasswordField {...confirmPasswordField} inputRef={confirmPasswordField.ref} autoComplete="new-password" placeholder="Re-enter your password" toggleLabel="password confirmation" />
         </Field>
         <Button type="submit" loading={isSubmitting}>Create account</Button>
       </form>

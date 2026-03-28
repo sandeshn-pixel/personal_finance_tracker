@@ -20,6 +20,13 @@ public sealed class PasswordResetEmailSender(
             return;
         }
 
+        logger.LogInformation(
+            "Attempting to send password reset email to {Email} using SMTP host {SmtpHost}:{Port} with SSL {UseSsl}.",
+            email,
+            _emailOptions.SmtpHost,
+            _emailOptions.Port,
+            _emailOptions.UseSsl);
+
         using var message = new MailMessage
         {
             From = new MailAddress(_emailOptions.FromAddress!, _emailOptions.FromName),
@@ -41,7 +48,21 @@ public sealed class PasswordResetEmailSender(
             client.Credentials = new NetworkCredential(_emailOptions.Username, _emailOptions.Password);
         }
 
-        await client.SendMailAsync(message, cancellationToken);
+        try
+        {
+            await client.SendMailAsync(message, cancellationToken);
+            logger.LogInformation("Password reset email accepted by SMTP provider for {Email}.", email);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                "Password reset email send failed for {Email}. SMTP host {SmtpHost}:{Port}. Error: {Error}",
+                email,
+                _emailOptions.SmtpHost,
+                _emailOptions.Port,
+                ex.Message);
+            throw;
+        }
     }
 
     private static string BuildTextBody(string resetUrl)

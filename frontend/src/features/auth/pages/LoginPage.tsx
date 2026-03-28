@@ -7,6 +7,7 @@ import { useAuth } from "../../../app/providers/AuthProvider";
 import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/components/Button";
 import { Field } from "../../../shared/components/Field";
+import { PasswordField } from "../../../shared/components/PasswordField";
 import { ApiError } from "../../../shared/lib/api/client";
 import { AuthCard } from "../components/AuthCard";
 
@@ -48,6 +49,7 @@ export function LoginPage() {
       password: "",
     },
   });
+  const passwordField = register("password");
 
   async function onSubmit(values: LoginFormValues) {
     setErrorMessage(null);
@@ -87,7 +89,7 @@ export function LoginPage() {
           <input {...register("email")} type="email" autoComplete="email" placeholder="name@company.com" />
         </Field>
         <Field label="Password" error={errors.password?.message}>
-          <input {...register("password")} type="password" autoComplete="current-password" placeholder="Enter your password" />
+          <PasswordField {...passwordField} inputRef={passwordField.ref} autoComplete="current-password" placeholder="Enter your password" toggleLabel="password" />
         </Field>
         <div className="auth-inline-actions">
           <Link to="/forgot-password">Forgot password?</Link>

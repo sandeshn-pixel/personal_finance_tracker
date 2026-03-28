@@ -32,7 +32,7 @@ const goalBadges: Record<string, string> = {
 
 const spendingPalette = ["#00ADB5", "#F08F86", "#6F7D8C", "#A86523", "#7E57C2", "#4CAF50"];
 export function DashboardPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const { sharedAccessView } = useWorkspaceScope();
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [forecastMonth, setForecastMonth] = useState<ForecastMonthSummaryDto | null>(null);
@@ -45,10 +45,24 @@ export function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
   const [isSeedingSampleData, setIsSeedingSampleData] = useState(false);
+  const [isSampleDataGuideDismissed, setIsSampleDataGuideDismissed] = useState(true);
 
   useEffect(() => {
     void load();
   }, [accessToken, sharedAccessView]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setIsSampleDataGuideDismissed(true);
+      return;
+    }
+
+    try {
+      setIsSampleDataGuideDismissed(window.localStorage.getItem(getSampleDataGuideStorageKey(user.id)) === "done");
+    } catch {
+      setIsSampleDataGuideDismissed(false);
+    }
+  }, [user?.id]);
 
   async function load() {
     if (!accessToken) return;
@@ -178,6 +192,7 @@ export function DashboardPage() {
     setIsSeedingSampleData(true);
     try {
       const result = await settingsApi.seedSampleData(accessToken);
+      dismissSampleDataGuide();
       setErrorVariant("info");
       setErrorMessage(result.message);
       await load();
@@ -186,6 +201,17 @@ export function DashboardPage() {
       setErrorMessage(error instanceof ApiError ? error.message : "Unable to add sample data.");
     } finally {
       setIsSeedingSampleData(false);
+    }
+  }
+
+  function dismissSampleDataGuide() {
+    setIsSampleDataGuideDismissed(true);
+    if (!user?.id) return;
+
+    try {
+      window.localStorage.setItem(getSampleDataGuideStorageKey(user.id), "done");
+    } catch {
+      // Ignore storage failures and keep the current session usable.
     }
   }
 
@@ -219,6 +245,7 @@ export function DashboardPage() {
     && summary.budgetHealth.totalBudgeted === 0
     && summary.goalProgress.length === 0
     && summary.savingsAutomation.activeRecurringRulesCount === 0;
+  const showSampleDataGuide = isFirstRun && sampleDataStatus?.canSeedFromDashboard && !isSampleDataGuideDismissed;
 
   return (
     <div className="page-stack dashboard-page">
@@ -237,9 +264,22 @@ export function DashboardPage() {
               </div>
               <div className="dashboard-onboarding-card__actions">
                 {sampleDataStatus?.canSeedFromDashboard ? (
-                  <Button type="button" loading={isSeedingSampleData} onClick={() => void seedSampleData()}>
-                    Add sample data
-                  </Button>
+                  <div className={`dashboard-tour-anchor${showSampleDataGuide ? " dashboard-tour-anchor--active" : ""}`}>
+                    {showSampleDataGuide ? <div className="dashboard-tour-backdrop" aria-hidden="true" /> : null}
+                    <Button type="button" loading={isSeedingSampleData} onClick={() => void seedSampleData()}>
+                      Add sample data
+                    </Button>
+                    {showSampleDataGuide ? (
+                      <div className="dashboard-tour-card" role="dialog" aria-label="Sample data guide">
+                        <span className="dashboard-tour-card__eyebrow">Quick tour</span>
+                        <strong>Start here for a fully populated demo workspace</strong>
+                        <p>This button adds a realistic 3-month finance history so charts, forecasts, budgets, and goals look complete right away. If you skip it now, you can still find it later in Settings under Workspace tools.</p>
+                        <div className="dashboard-tour-card__actions">
+                          <button type="button" className="ghost-button ghost-button--small" onClick={dismissSampleDataGuide}>Done</button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
                 <div className="dashboard-onboarding-card__secondary-actions">
                   <Link to="/accounts" className="ghost-button">Add your first account</Link>
@@ -666,6 +706,10 @@ export function DashboardPage() {
       )}
     </div>
   );
+}
+
+function getSampleDataGuideStorageKey(userId: string) {
+  return `ft-sample-data-guide:${userId}`;
 }
 
 

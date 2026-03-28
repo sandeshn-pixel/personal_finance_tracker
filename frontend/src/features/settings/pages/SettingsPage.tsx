@@ -410,7 +410,7 @@ export function SettingsPage() {
               <Alert
                 message={sampleDataStatus?.canRunSeed
                   ? "Sample data is currently available because this workspace has no recorded transactions yet."
-                  : "Sample data stays visible here for reference, but it is locked once real transactions exist in the workspace."}
+                  : "Sample data has already been used or real transactions now exist, so this bootstrap action is locked for safety."}
                 variant={sampleDataStatus?.canRunSeed ? "info" : "success"}
               />
               <div className="stats-grid">
@@ -432,7 +432,7 @@ export function SettingsPage() {
               </p>
               <div className="button-row">
                 <Button type="button" loading={isSeedingSampleData} onClick={() => void seedSampleData()} disabled={!sampleDataStatus?.canRunSeed}>
-                  Add sample workspace data
+                  {sampleDataStatus?.canRunSeed ? "Add sample workspace data" : "Sample workspace already locked"}
                 </Button>
               </div>
             </div>

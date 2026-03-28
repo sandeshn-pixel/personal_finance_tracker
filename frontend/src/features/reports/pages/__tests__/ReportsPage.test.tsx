@@ -1,6 +1,8 @@
-﻿import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { WorkspaceScopeProvider } from "../../../../app/providers/WorkspaceScopeProvider";
 
 const useAuthMock = vi.fn();
 const accountsListMock = vi.fn();
@@ -25,16 +27,24 @@ import { ReportsPage } from "../ReportsPage";
 describe("ReportsPage", () => {
   it("renders report totals and exports the current report", async () => {
     useAuthMock.mockReturnValue({ accessToken: "token" });
-    accountsListMock.mockResolvedValue([{ id: "a1", name: "Checking", isArchived: false }]);
+    accountsListMock.mockResolvedValue([{ id: "a1", name: "Checking", isArchived: false, isShared: false, currentUserRole: "Owner" }]);
     reportsOverviewMock.mockResolvedValue({
       summary: { totalIncome: 1000, totalExpense: 250, netCashFlow: 750, incomeTransactionCount: 1, expenseTransactionCount: 1 },
+      comparison: { previousTotalIncome: 900, previousTotalExpense: 300, previousNetCashFlow: 600, previousIncomeTransactionCount: 1, previousExpenseTransactionCount: 1 },
       categorySpend: [{ categoryId: "c1", categoryName: "Food", amount: 250 }],
+      topMerchants: [{ merchantName: "Cafe", amount: 250, transactionCount: 1 }],
       incomeExpenseTrend: [{ periodStartUtc: "2026-03-01T00:00:00Z", label: "Week of 01 Mar", income: 1000, expense: 250 }],
       accountBalanceTrend: [{ periodStartUtc: "2026-03-01T00:00:00Z", label: "Week of 01 Mar", balance: 750 }],
     });
     reportsExportMock.mockResolvedValue("reports-overview.csv");
 
-    render(<ReportsPage />);
+    render(
+      <MemoryRouter>
+        <WorkspaceScopeProvider>
+          <ReportsPage />
+        </WorkspaceScopeProvider>
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText("Total income")).toBeInTheDocument();
     expect(screen.getByText("Coverage")).toBeInTheDocument();

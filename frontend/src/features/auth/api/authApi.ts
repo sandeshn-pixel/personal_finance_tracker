@@ -4,6 +4,7 @@ import type { AuthResponse, LoginPayload, RegisterPayload } from "./types";
 export type ForgotPasswordResponse = {
   message: string;
   resetUrl: string | null;
+  debugStatus: string | null;
 };
 
 export const authApi = {

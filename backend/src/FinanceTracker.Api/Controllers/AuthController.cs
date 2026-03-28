@@ -99,22 +99,53 @@ public sealed class AuthController(
         var resetUrl = !string.IsNullOrWhiteSpace(token)
             ? BuildResetUrl(request.Email, token)
             : null;
+        string? debugStatus = null;
+
+        if (string.IsNullOrWhiteSpace(resetUrl))
+        {
+            logger.LogInformation("Password reset requested for {Email}, but no matching account was found.", request.Email.Trim());
+            if (_environment.IsDevelopment())
+            {
+                debugStatus = "No matching account was found for this email.";
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(resetUrl))
         {
-            try
+            if (!_emailOptions.Enabled)
             {
-                await passwordResetEmailSender.SendResetLinkAsync(request.Email.Trim(), resetUrl, cancellationToken);
+                if (_environment.IsDevelopment())
+                {
+                    debugStatus = "Email delivery is disabled locally. Use the development reset link below.";
+                }
             }
-            catch (Exception ex)
+            else
             {
-                logger.LogError(ex, "Unable to send password reset email for {Email}", request.Email.Trim());
+                try
+                {
+                    await passwordResetEmailSender.SendResetLinkAsync(request.Email.Trim(), resetUrl, cancellationToken);
+
+                    if (_environment.IsDevelopment())
+                    {
+                        debugStatus = "SMTP accepted the password reset email.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError("Unable to send password reset email for {Email}. Error: {Error}", request.Email.Trim(), ex.Message);
+
+                    if (_environment.IsDevelopment())
+                    {
+                        debugStatus = $"Password reset email failed to send. {ex.Message}";
+                    }
+                }
             }
         }
 
         return Accepted(new ForgotPasswordResponse(
             "If the email exists, a password reset email has been prepared.",
-            _environment.IsDevelopment() && !_emailOptions.Enabled ? resetUrl : null));
+            _environment.IsDevelopment() && !_emailOptions.Enabled ? resetUrl : null,
+            _environment.IsDevelopment() ? debugStatus : null));
     }
 
     [EnableRateLimiting("AuthSensitive")]
