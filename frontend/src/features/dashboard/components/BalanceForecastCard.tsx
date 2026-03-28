@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -36,6 +37,21 @@ type ForecastChartPoint = {
 };
 
 export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceForecastCardProps) {
+  const [isCompactScreen, setIsCompactScreen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 720px)");
+    const syncLayout = () => setIsCompactScreen(mediaQuery.matches);
+
+    syncLayout();
+    mediaQuery.addEventListener("change", syncLayout);
+    return () => mediaQuery.removeEventListener("change", syncLayout);
+  }, []);
+
   const forecastPoints = forecastDaily.points ?? [];
 
   const chartData: ForecastChartPoint[] = forecastPoints.length === 0
@@ -95,6 +111,13 @@ export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceFor
     .filter((item) => item.type === "Expense")
     .slice(0, 3);
 
+  const chartHeight = isCompactScreen ? 248 : 220;
+  const axisFontSize = isCompactScreen ? 11 : 12;
+  const yAxisWidth = isCompactScreen ? 72 : 96;
+  const chartMargin = isCompactScreen
+    ? { top: 10, right: 4, bottom: 4, left: 0 }
+    : { top: 12, right: 12, bottom: 8, left: 4 };
+
   return (
     <section className="panel-card panel-card--large dashboard-flow__item forecast-card">
       <div className="panel-card__header panel-card__header--inline forecast-card__header">
@@ -140,17 +163,24 @@ export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceFor
 
           <div className="forecast-chart-block">
             <div className="forecast-line-chart-wrap" aria-label="Projected daily balance through month end">
-              <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 8, left: 4 }}>
+              <ResponsiveContainer width="100%" height={chartHeight}>
+              <ComposedChart data={chartData} margin={chartMargin}>
                 <CartesianGrid stroke="rgba(231, 221, 212, 0.75)" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "#6E625B", fontSize: 12 }} />
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={isCompactScreen ? 16 : 10}
+                  interval={isCompactScreen ? "preserveStartEnd" : 0}
+                  tick={{ fill: "#6E625B", fontSize: axisFontSize }}
+                />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fill: "#6E625B", fontSize: 12 }}
-                  width={96}
+                  tick={{ fill: "#6E625B", fontSize: axisFontSize }}
+                  width={yAxisWidth}
                   domain={[domainMin, domainMax]}
-                  tickFormatter={(value: number) => formatCurrency(value)}
+                  tickFormatter={(value: number) => formatForecastAxisCurrency(value, isCompactScreen)}
                 />
                 <Tooltip
                   cursor={{ stroke: "rgba(75, 46, 43, 0.15)", strokeWidth: 1 }}
@@ -215,4 +245,17 @@ export function BalanceForecastCard({ forecastMonth, forecastDaily }: BalanceFor
       )}
     </section>
   );
+}
+
+function formatForecastAxisCurrency(value: number, compact: boolean) {
+  if (!compact) {
+    return formatCurrency(value);
+  }
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }

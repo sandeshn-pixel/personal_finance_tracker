@@ -48,7 +48,6 @@ export function ForgotPasswordPage() {
   return (
     <AuthCard
       title="Reset your password"
-      subtitle="Request a secure one-time reset link. If email delivery is configured, the link will be sent to your inbox. Local development can still show a direct shortcut when SMTP is disabled."
       footer={<p>Remembered it? <Link to="/login">Back to sign in</Link></p>}
     >
       <form className="form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>

@@ -8,7 +8,7 @@ export function AuthCard({
   children,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -18,7 +18,7 @@ export function AuthCard({
         <div className="brand-mark">FT</div>
         <p className="eyebrow">Personal Finance Tracker</p>
         <h1>{title}</h1>
-        <p className="auth-copy">{subtitle}</p>
+        {subtitle ? <p className="auth-copy">{subtitle}</p> : null}
         <h3>Manage Your Personal Finances</h3>
         <img 
           src="/Personal_finance.png"  
@@ -37,7 +37,7 @@ export function AuthCard({
         <div className="auth-mobile-intro">
           <p className="eyebrow">Personal Finance Tracker</p>
           <h1>{title}</h1>
-          <p className="auth-copy">{subtitle}</p>
+          {subtitle ? <p className="auth-copy">{subtitle}</p> : null}
         </div>
         {children}
         <div className="auth-footer">{footer}</div>
