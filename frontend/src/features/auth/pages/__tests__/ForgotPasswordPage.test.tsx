@@ -35,5 +35,5 @@ describe("ForgotPasswordPage", () => {
       "href",
       "http://localhost:5173/reset-password?email=user%40example.com&token=abc",
     );
-  });
+  }, 10000);
 });

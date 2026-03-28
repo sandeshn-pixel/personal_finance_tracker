@@ -10,5 +10,7 @@ public interface ISettingsService
     Task<PreferenceSettingsDto> UpdatePreferencesAsync(Guid userId, UpdatePreferencesRequest request, CancellationToken cancellationToken);
     Task<NotificationSettingsDto> UpdateNotificationsAsync(Guid userId, UpdateNotificationSettingsRequest request, CancellationToken cancellationToken);
     Task<FinancialDefaultsSettingsDto> UpdateFinancialDefaultsAsync(Guid userId, UpdateFinancialDefaultsRequest request, CancellationToken cancellationToken);
+    Task<SampleDataSeedStatusDto> GetSampleDataSeedStatusAsync(Guid userId, CancellationToken cancellationToken);
+    Task<SeedSampleDataResultDto> SeedSampleDataAsync(Guid userId, CancellationToken cancellationToken);
     Task LogoutAllSessionsAsync(Guid userId, CancellationToken cancellationToken);
 }

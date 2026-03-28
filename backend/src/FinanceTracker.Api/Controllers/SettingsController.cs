@@ -94,6 +94,30 @@ public sealed class SettingsController(
         return Ok(await settingsService.UpdateFinancialDefaultsAsync(currentUserService.UserId.Value, request, cancellationToken));
     }
 
+    [HttpGet("sample-data-status")]
+    [ProducesResponseType(typeof(SampleDataSeedStatusDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSampleDataStatus(CancellationToken cancellationToken)
+    {
+        if (!currentUserService.UserId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await settingsService.GetSampleDataSeedStatusAsync(currentUserService.UserId.Value, cancellationToken));
+    }
+
+    [HttpPost("sample-data")]
+    [ProducesResponseType(typeof(SeedSampleDataResultDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SeedSampleData(CancellationToken cancellationToken)
+    {
+        if (!currentUserService.UserId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await settingsService.SeedSampleDataAsync(currentUserService.UserId.Value, cancellationToken));
+    }
+
     [HttpPost("logout-all")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> LogoutAll(CancellationToken cancellationToken)

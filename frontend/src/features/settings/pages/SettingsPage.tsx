@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useAuth } from "../../../app/providers/AuthProvider";
 import { useTheme, type ThemeName } from "../../../app/providers/ThemeProvider";
 import { accountsApi, type AccountDto } from "../../accounts/api/accountsApi";
-import { settingsApi, type UserSettingsDto } from "../api/settingsApi";
+import { settingsApi, type SampleDataSeedStatusDto, type UserSettingsDto } from "../api/settingsApi";
 import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/components/Button";
 import { Field } from "../../../shared/components/Field";
@@ -57,7 +57,7 @@ type PasswordFormValues = z.infer<typeof passwordSchema>;
 type PreferencesFormValues = z.infer<typeof preferencesSchema>;
 type NotificationFormValues = z.infer<typeof notificationSchema>;
 type FinancialFormValues = z.infer<typeof financialSchema>;
-type SettingsSectionKey = "account" | "security" | "preferences" | "notifications" | "financial-defaults";
+type SettingsSectionKey = "account" | "security" | "preferences" | "notifications" | "financial-defaults" | "workspace-tools";
 
 const themeOptions: Array<{ value: ThemeName; label: string; description: string; swatches: [string, string, string] }> = [
   { value: "slate", label: "Slate teal", description: "Clean neutral workspace with teal accents.", swatches: ["#222831", "#00ADB5", "#EEEEEE"] },
@@ -71,17 +71,20 @@ const settingsSections: Array<{ key: SettingsSectionKey; label: string; caption:
   { key: "preferences", label: "Preferences", caption: "Display defaults and theme" },
   { key: "notifications", label: "Notifications", caption: "Reminder and alert controls" },
   { key: "financial-defaults", label: "Financial defaults", caption: "Fast-entry defaults for daily use" },
+  { key: "workspace-tools", label: "Workspace tools", caption: "Safe bootstrap actions for new workspaces" },
 ];
 
 export function SettingsPage() {
   const { accessToken, refreshSession, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<UserSettingsDto | null>(null);
+  const [sampleDataStatus, setSampleDataStatus] = useState<SampleDataSeedStatusDto | null>(null);
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>("account");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isSeedingSampleData, setIsSeedingSampleData] = useState(false);
 
   const profileForm = useForm<ProfileFormValues>({ resolver: zodResolver(profileSchema) });
   const passwordForm = useForm<PasswordFormValues>({ resolver: zodResolver(passwordSchema), defaultValues: { currentPassword: "", newPassword: "", confirmPassword: "" } });
@@ -104,12 +107,14 @@ export function SettingsPage() {
     if (!accessToken) return;
     setLoading(true);
     try {
-      const [settingsResponse, accountsResponse] = await Promise.all([
+      const [settingsResponse, accountsResponse, sampleDataStatusResponse] = await Promise.all([
         settingsApi.get(accessToken),
         accountsApi.list(accessToken),
+        settingsApi.getSampleDataStatus(accessToken),
       ]);
       setSettings(settingsResponse);
       setAccounts(accountsResponse.filter((item) => !item.isArchived));
+      setSampleDataStatus(sampleDataStatusResponse);
       hydrateForms(settingsResponse);
       setTheme(settingsResponse.preferences.theme);
       setErrorMessage(null);
@@ -214,6 +219,29 @@ export function SettingsPage() {
       window.location.href = "/login";
     } catch (error) {
       handleError(error, "Unable to log out all sessions.");
+    }
+  }
+
+  async function seedSampleData() {
+    if (!accessToken || !sampleDataStatus?.canRunSeed) {
+      return;
+    }
+
+    const confirmed = window.confirm("Add a carefully prepared 3-month sample history to this workspace? This is intended for a new workspace before any real transactions are recorded.");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSeedingSampleData(true);
+    try {
+      const response = await settingsApi.seedSampleData(accessToken);
+      setSuccessMessage(response.message);
+      setErrorMessage(null);
+      await load();
+    } catch (error) {
+      handleError(error, "Unable to add sample data.");
+    } finally {
+      setIsSeedingSampleData(false);
     }
   }
 
@@ -368,6 +396,48 @@ export function SettingsPage() {
             </form>
           </section>
         );
+      case "workspace-tools":
+        return (
+          <section className="panel-card panel-card--form settings-panel-card">
+            <div className="panel-card__header settings-panel-card__header">
+              <div>
+                <h3>Workspace tools</h3>
+                <p>Bootstrap a realistic sample ledger for demos and product walkthroughs without relying on startup seeding.</p>
+              </div>
+              <span className="status-badge status-badge--default">Manual</span>
+            </div>
+            <div className="form-stack">
+              <Alert
+                message={sampleDataStatus?.canRunSeed
+                  ? "Sample data is currently available because this workspace has no recorded transactions yet."
+                  : "Sample data stays visible here for reference, but it is locked once real transactions exist in the workspace."}
+                variant={sampleDataStatus?.canRunSeed ? "info" : "success"}
+              />
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span>Active accounts</span>
+                  <strong>{sampleDataStatus?.activeAccountCount ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Goals</span>
+                  <strong>{sampleDataStatus?.goalCount ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Recurring rules</span>
+                  <strong>{sampleDataStatus?.recurringRuleCount ?? 0}</strong>
+                </div>
+              </div>
+              <p className="form-status">
+                The seed creates a sensible 3-month history with income, living expenses, savings transfers, budgets, goal progress, and recurring rules so dashboard charts and trends are immediately useful.
+              </p>
+              <div className="button-row">
+                <Button type="button" loading={isSeedingSampleData} onClick={() => void seedSampleData()} disabled={!sampleDataStatus?.canRunSeed}>
+                  Add sample workspace data
+                </Button>
+              </div>
+            </div>
+          </section>
+        );
     }
   }
 
@@ -376,7 +446,7 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack">
-      <SectionHeader title="Settings" description="Manage profile, security, preferences, notifications, defaults, and theme." />
+      <SectionHeader title="Settings" description="Manage profile, security, preferences, notifications, defaults, theme, and workspace setup tools." />
       {errorMessage ? <Alert message={errorMessage} /> : null}
       {successMessage ? <Alert message={successMessage} variant="success" /> : null}
 

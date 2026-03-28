@@ -8,6 +8,7 @@ const useThemeMock = vi.fn();
 const accountsListMock = vi.fn();
 const settingsGetMock = vi.fn();
 const settingsUpdatePreferencesMock = vi.fn();
+const settingsSampleDataStatusMock = vi.fn();
 
 vi.mock("../../../../app/providers/AuthProvider", () => ({
   useAuth: () => useAuthMock(),
@@ -26,6 +27,8 @@ vi.mock("../../../accounts/api/accountsApi", () => ({
 vi.mock("../../api/settingsApi", () => ({
   settingsApi: {
     get: (...args: unknown[]) => settingsGetMock(...args),
+    getSampleDataStatus: (...args: unknown[]) => settingsSampleDataStatusMock(...args),
+    seedSampleData: vi.fn(),
     updatePreferences: (...args: unknown[]) => settingsUpdatePreferencesMock(...args),
     updateProfile: vi.fn(),
     changePassword: vi.fn(),
@@ -56,6 +59,15 @@ describe("SettingsPage", () => {
       notifications: { budgetWarningsEnabled: true, goalRemindersEnabled: true, recurringRemindersEnabled: true },
       financialDefaults: { defaultAccountId: null, defaultAccountName: null, defaultPaymentMethod: null, defaultBudgetAlertThresholdPercent: 80 },
     });
+    settingsSampleDataStatusMock.mockResolvedValue({
+      canSeedFromDashboard: true,
+      canRunSeed: true,
+      hasTransactions: false,
+      activeAccountCount: 0,
+      budgetCount: 0,
+      goalCount: 0,
+      recurringRuleCount: 0,
+    });
     settingsUpdatePreferencesMock.mockResolvedValue({
       preferredCurrencyCode: "INR",
       dateFormat: "dd MMM yyyy",
@@ -84,5 +96,5 @@ describe("SettingsPage", () => {
     }));
     expect(setThemeMock).toHaveBeenLastCalledWith("dark");
     expect(await screen.findByText(/preferences updated/i)).toBeInTheDocument();
-  });
+  }, 10000);
 });

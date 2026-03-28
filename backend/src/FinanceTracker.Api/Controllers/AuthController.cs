@@ -25,7 +25,8 @@ public sealed class AuthController(
     IOptions<JwtOptions> jwtOptions,
     IOptions<FrontendOptions> frontendOptions,
     IOptions<EmailOptions> emailOptions,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    ILogger<AuthController> logger) : ControllerBase
 {
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
     private readonly FrontendOptions _frontendOptions = frontendOptions.Value;
@@ -101,7 +102,14 @@ public sealed class AuthController(
 
         if (!string.IsNullOrWhiteSpace(resetUrl))
         {
-            await passwordResetEmailSender.SendResetLinkAsync(request.Email.Trim(), resetUrl, cancellationToken);
+            try
+            {
+                await passwordResetEmailSender.SendResetLinkAsync(request.Email.Trim(), resetUrl, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Unable to send password reset email for {Email}", request.Email.Trim());
+            }
         }
 
         return Accepted(new ForgotPasswordResponse(

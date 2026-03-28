@@ -8,8 +8,10 @@ import { dashboardApi, type DashboardSummaryDto } from "../api/dashboardApi";
 import { forecastApi, type ForecastDailyResponseDto, type ForecastMonthSummaryDto } from "../../forecast/api/forecastApi";
 import { insightsApi, type HealthScoreResponseDto } from "../../insights/api/insightsApi";
 import { reportsApi, type ReportsTrendResponseDto } from "../../reports/api/reportsApi";
+import { settingsApi, type SampleDataSeedStatusDto } from "../../settings/api/settingsApi";
 import { BalanceForecastCard } from "../components/BalanceForecastCard";
 import { Alert } from "../../../shared/components/Alert";
+import { Button } from "../../../shared/components/Button";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { PageLoader } from "../../../shared/components/PageLoader";
 import { ProgressBar } from "../../../shared/components/ProgressBar";
@@ -38,9 +40,11 @@ export function DashboardPage() {
   const [healthScore, setHealthScore] = useState<HealthScoreResponseDto | null>(null);
   const [trendReport, setTrendReport] = useState<ReportsTrendResponseDto | null>(null);
   const [accounts, setAccounts] = useState<AccountDto[]>([]);
+  const [sampleDataStatus, setSampleDataStatus] = useState<SampleDataSeedStatusDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorVariant, setErrorVariant] = useState<"error" | "info">("error");
+  const [isSeedingSampleData, setIsSeedingSampleData] = useState(false);
 
   useEffect(() => {
     void load();
@@ -77,12 +81,13 @@ export function DashboardPage() {
         ...(scopeQuery ?? {}),
       };
 
-      const [summaryResponse, forecastMonthResponse, forecastDailyResponse, healthScoreResponse, trendResponse] = await Promise.all([
+      const [summaryResponse, forecastMonthResponse, forecastDailyResponse, healthScoreResponse, trendResponse, sampleDataStatusResponse] = await Promise.all([
         dashboardApi.summary(accessToken, scopeQuery),
         forecastApi.month(accessToken, scopeQuery),
         forecastApi.daily(accessToken, scopeQuery),
         insightsApi.healthScore(accessToken, scopeQuery),
         reportsApi.trends(accessToken, trendQuery),
+        settingsApi.getSampleDataStatus(accessToken),
       ]);
 
       setSummary(summaryResponse);
@@ -90,6 +95,7 @@ export function DashboardPage() {
       setForecastDaily(forecastDailyResponse);
       setHealthScore(healthScoreResponse);
       setTrendReport(trendResponse);
+      setSampleDataStatus(sampleDataStatusResponse);
       setErrorVariant("error");
       setErrorMessage(null);
     } catch (error) {
@@ -160,6 +166,29 @@ export function DashboardPage() {
 
     return null;
   }, [sharedAccessView, sharedGuestAccounts, showSharedViewToggle]);
+
+  async function seedSampleData() {
+    if (!accessToken || !sampleDataStatus?.canRunSeed) return;
+
+    const confirmed = window.confirm("Add a carefully prepared 3-month sample history to this workspace? This should only be used before real transactions are entered.");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSeedingSampleData(true);
+    try {
+      const result = await settingsApi.seedSampleData(accessToken);
+      setErrorVariant("info");
+      setErrorMessage(result.message);
+      await load();
+    } catch (error) {
+      setErrorVariant("error");
+      setErrorMessage(error instanceof ApiError ? error.message : "Unable to add sample data.");
+    } finally {
+      setIsSeedingSampleData(false);
+    }
+  }
+
   if (loading) return <PageLoader label="Loading dashboard" />;
 
   if (isScopeEmpty) {
@@ -185,7 +214,7 @@ export function DashboardPage() {
 
   if (!summary || !forecastMonth || !forecastDaily || !healthScore || !trendReport) return <Alert message={errorMessage ?? "Dashboard is unavailable."} variant={errorVariant} />;
 
-  const isFirstRun = accountCount === 0
+  const isFirstRun = !sampleDataStatus?.hasTransactions
     && summary.recentTransactions.length === 0
     && summary.budgetHealth.totalBudgeted === 0
     && summary.goalProgress.length === 0
@@ -204,11 +233,16 @@ export function DashboardPage() {
               <div>
                 <p className="eyebrow">Getting started</p>
                 <h3>Start tracking your money</h3>
-                <p>Create your first account, record a transaction, or set a budget to turn this empty workspace into a live financial dashboard.</p>
+                <p>{accountCount === 0 ? "Create your first account, record a transaction, or seed a guided sample workspace to turn this empty setup into a live financial dashboard." : "You already have the workspace shell in place. Record your first transaction or add a guided sample history to light up the charts instantly."}</p>
               </div>
               <div className="dashboard-onboarding-card__actions">
-                <Link to="/accounts" className="primary-button dashboard-onboarding-card__primary-link">Add your first account</Link>
+                {sampleDataStatus?.canSeedFromDashboard ? (
+                  <Button type="button" loading={isSeedingSampleData} onClick={() => void seedSampleData()}>
+                    Add sample data
+                  </Button>
+                ) : null}
                 <div className="dashboard-onboarding-card__secondary-actions">
+                  <Link to="/accounts" className="ghost-button">Add your first account</Link>
                   <Link to="/transactions" className="ghost-button">Add a transaction</Link>
                   <Link to="/budgets" className="ghost-button">Create a budget</Link>
                   <Link to="/goals" className="ghost-button">Create a goal</Link>
